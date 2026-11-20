@@ -137,7 +137,7 @@ engine package. Generate it with
 | A2-009 approved-correction persistence | Done: only approved entries apply; original text, engine text and every substitution are stored on the job; retries reuse the same choices |
 | A2-002 language detection | Done: per sentence (Hindi, Roman Hinglish, English, mixed, unclear) with confidence |
 | A2-003 mixed-language segmentation | Done: Devanagari/Latin spans with exact offsets |
-| A2-004 transliteration suggestions | Done: confident for names and common words, rule-based guesses marked; nothing applied without review |
+| A2-004 transliteration suggestions | Done (basic, rule-based). **Roman Hinglish input is out of scope for now** ([ADR-0005](docs/adr/0005-input-scripts.md)): write English or Devanagari |
 | A2-001 Indic engine | Draft: IndicF5 adapter (no remote code, local files, Devanagari only, own voice). **Not run; manifest, file layout and lockfile must be made on the Mac** ([notes](docs/engines/indicf5.md)) |
 | A2-007/008 comparison and benchmark | Need IndicF5 (or another Indic engine) installed and run on the M2 |
 

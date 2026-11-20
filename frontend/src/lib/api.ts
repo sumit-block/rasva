@@ -354,7 +354,8 @@ export const pronunciations = {
     const res = await fetch(`${API}/pronunciations/${id}`, { method: "DELETE" });
     if (!res.ok) throw new ApiError(res.status, "delete_failed", "Could not delete that pronunciation.");
   },
-  check: (body: { text: string; language: "hi" | "en"; project_id?: string }) =>
+  /** Leave out `language` for engines that choose entries per sentence. */
+  check: (body: { text: string; language?: "hi" | "en"; project_id?: string }) =>
     request<{ normalized: string; applied: AppliedPronunciation[]; unapproved_matches: AppliedPronunciation[] }>(
       "/pronunciations/check",
       { method: "POST", body: json(body) },

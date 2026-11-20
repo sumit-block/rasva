@@ -45,7 +45,9 @@ class EntryUpdate(BaseModel):
 
 class CheckRequest(BaseModel):
     text: str = Field(max_length=20_000)
-    language: Literal["hi", "en"]
+    # The voice's language; leave out for engines that read each sentence in its
+    # own language (entries are then chosen per sentence).
+    language: Literal["hi", "en"] | None = None
     project_id: str | None = None
 
 

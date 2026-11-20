@@ -116,7 +116,8 @@ function VoicePicker({ voices, value, onChange, profiles, profileId, onProfile }
 
 /** Shows which words the pronunciation dictionary will change (PRD §10.2 step 6). */
 function PronunciationCheck({ text, language, projectId, enabled, onToggle }: {
-  text: string; language: "hi" | "en" | undefined; projectId: string | null; enabled: boolean; onToggle: (v: boolean) => void;
+  /** "per_sentence": the engine reads each sentence in its own language. */
+  text: string; language: "hi" | "en" | "per_sentence" | undefined; projectId: string | null; enabled: boolean; onToggle: (v: boolean) => void;
 }) {
   const [result, setResult] = useState<{ applied: AppliedPronunciation[]; pending: AppliedPronunciation[] }>();
   useEffect(() => {
@@ -126,7 +127,11 @@ function PronunciationCheck({ text, language, projectId, enabled, onToggle }: {
     }
     const t = window.setTimeout(() => {
       pronunciations
-        .check({ text, language, ...(projectId ? { project_id: projectId } : {}) })
+        .check({
+          text,
+          ...(language === "per_sentence" ? {} : { language }),
+          ...(projectId ? { project_id: projectId } : {}),
+        })
         .then((r) => setResult({ applied: r.applied, pending: r.unapproved_matches }), () => setResult(undefined));
     }, 600);
     return () => window.clearTimeout(t);
@@ -408,6 +413,7 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
   const voice = engine.voices.find((v) => v.id === voiceId);
   const profile = voiceProfileId ? profiles.data?.find((p) => p.id === voiceProfileId) : undefined;
   const speakingLanguage: "hi" | "en" | undefined = profile ? (profile.language === "any" ? undefined : profile.language) : voice?.language;
+  const perSentence = engine.features.includes("language_per_sentence");
   const devanagariWithEnglish = speakingLanguage === "en" && hasDevanagari(script);
   const tooLong = script.length > MAX_CHARS;
   const blocked = !script.trim() || !(profile || voice) || devanagariWithEnglish || tooLong || submitting;
@@ -514,8 +520,8 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
             <span>{hasDevanagari(script) ? "Contains Devanagari" : script.trim() ? "Roman letters" : ""}</span>
             <span className={cn(tooLong && "text-danger")}>{script.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</span>
           </div>
-          <LanguagePanel script={script} voiceLanguage={speakingLanguage} onChange={setScript} />
-          <PronunciationCheck text={script.slice(0, 20000)} language={speakingLanguage} projectId={projectId}
+          <LanguagePanel script={script} voiceLanguage={speakingLanguage} perSentence={perSentence} onChange={setScript} />
+          <PronunciationCheck text={script.slice(0, 20000)} language={perSentence ? "per_sentence" : speakingLanguage} projectId={projectId}
             enabled={useDictionary} onToggle={setUseDictionary} />
           {recovered && (
             <Notice className="mt-3">Restored text from your last visit that hadn't been saved yet. It's saved now.</Notice>

@@ -13,6 +13,7 @@ from tests.test_voices import speechlike, upload
 
 BILINGUAL = "tests.fake_narrator:BilingualNarrator"
 NARRATOR = "tests.fake_narrator:FakeNarrator"
+CLONER = "tests.fake_narrator:CloningNarrator"
 TERMINAL = {"completed", "failed", "canceled", "interrupted"}
 
 DURYODHANA = Entry("e1", ("Duryodhana",), "Dur-yo-dhuh-na", "en")
@@ -72,7 +73,7 @@ def test_chatterbox_accepts_only_english_or_hindi_overrides():
 
 
 def client(settings):
-    return make_client(settings, extra_engines=(BILINGUAL, NARRATOR))
+    return make_client(settings, extra_engines=(BILINGUAL, NARRATOR, CLONER))
 
 
 def entry(c, **kw):
@@ -129,6 +130,29 @@ def test_hindi_recorded_voice_gets_english_entries_for_english_text(settings):
         assert hin["inputs"]["text"] == "Duryodhana spoke."
         for j in (built_in, eng, hin):
             wait_for(c, j["id"], TERMINAL)
+
+
+def test_single_language_cloning_engine_still_uses_the_recordings_language(settings):
+    with client(settings) as c:
+        p = c.post("/api/v1/projects", json={"name": "p", "module": "audio"}).json()
+        entry(c)
+        job = narrate(c, p["id"], "Duryodhana spoke.", engine="test-cloner",
+                      voice_profile_id=hindi_voice(c))  # fmt: skip
+        assert job["inputs"]["text"] == "Duryodhana spoke."
+        assert "original_text" not in job["inputs"]
+        wait_for(c, job["id"], TERMINAL)
+
+
+def test_check_without_a_language_chooses_per_sentence(settings):
+    with client(settings) as c:
+        entry(c)
+        entry(c, written_forms=["कृष्ण"], spoken="क्रिश्न", language="hi")
+        r = c.post("/api/v1/pronunciations/check", json={"text": "Duryodhana spoke. कृष्ण आए।"})
+        assert r.status_code == 200, r.text
+        assert r.json()["normalized"] == "Dur-yo-dhuh-na spoke. क्रिश्न आए।"
+        r = c.post("/api/v1/pronunciations/check",
+                   json={"text": "Duryodhana spoke. कृष्ण आए।", "language": "hi"})  # fmt: skip
+        assert r.json()["normalized"] == "Duryodhana spoke. क्रिश्न आए।"
 
 
 def test_override_reaches_dictionary_and_engine(settings):

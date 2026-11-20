@@ -37,9 +37,13 @@ export function MemoryLine() {
   return (
     <p className="mb-3 flex flex-wrap items-center gap-x-2 text-xs text-muted" aria-live="polite">
       <MemoryStick className="size-3.5" aria-hidden />
-      <span className={cn(memory.level === "low" && "text-danger", memory.level === "tight" && "text-warning")}>
-        {LEVEL_TEXT[memory.level]}
-      </span>
+      {wait ? (
+        <span className="text-warning">Memory: not enough for the next job</span>
+      ) : (
+        <span className={cn(memory.level === "low" && "text-danger", memory.level === "tight" && "text-warning")}>
+          {LEVEL_TEXT[memory.level]}
+        </span>
+      )}
       <span>
         · {formatBytes(memory.available_bytes)} of {formatBytes(memory.total_bytes)} available
       </span>

@@ -1,9 +1,10 @@
 """Memory readings for the heavy-job guard (PRD §24).
 
 ``available`` is psutil's figure. On macOS it is free plus inactive pages: memory
-that can be handed to a new process without swapping. It does not count
-compressible or purgeable memory, so it is a conservative reading, and it is not
-the same signal as the memory-pressure graph in Activity Monitor.
+macOS can usually hand to a new process quickly, though reclaiming inactive
+pages can still mean compressing or swapping some of them. It does not count
+compressed or purgeable memory, and it is not the same signal as the
+memory-pressure graph in Activity Monitor.
 """
 
 from __future__ import annotations

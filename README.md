@@ -68,8 +68,9 @@ worker subprocess
 ([ADR-0001](docs/adr/0001-inference-worker-process.md)), so a crash or
 out-of-memory kill fails only that job, and unloading a model is guaranteed by
 the process exiting. Workers have their Hugging Face and PyTorch caches
-redirected into the managed root, and are blocked from downloading during
-inference ([ADR-0002](docs/adr/0002-managed-storage.md)). Job progress streams
+redirected into the managed root ([ADR-0002](docs/adr/0002-managed-storage.md)),
+and cannot open network connections during load or generation
+([ADR-0007](docs/adr/0007-worker-network-guard.md)). Job progress streams
 to the UI over Server-Sent Events.
 
 ### Adding an engine
@@ -168,7 +169,7 @@ pronunciation entry does not mark existing takes as outdated.
 | Quality presets · automatic engine choice | Done: per-language recommendation from your own ratings (else default voice) with the reason shown; presets only for engines that have them; export presets |
 | Storage cleanup | Done: previews, removed-sentence audio, temp files, replaced versions, older exports, paused downloads, unrecognised files; originals and in-use audio never offered; missing files reported |
 | Privacy audit | Done (automated): private text never reaches logs; engine logs rotate; Kokoro's text-quoting warnings suppressed |
-| Offline test | Done (automated, app process): no outbound connections during normal use; engine workers run with offline flags; UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off |
+| Offline test | Done (automated): no outbound connections from the app process during normal use; engine workers run with offline flags **and cannot open network connections or look up hosts during load and generation** (Python-level socket guard, blocked attempts named in the engine log; [ADR-0007](docs/adr/0007-worker-network-guard.md)); UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off, and loading each installed engine under the guard |
 | Mac sleep guidance | Shown when Wi-Fi access is on |
 | Usability testing · release checklist | Needs people and the M2 |
 

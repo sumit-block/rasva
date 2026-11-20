@@ -133,6 +133,7 @@ def store_upload(
     stream: BinaryIO,
     max_bytes: int,
     preflight: Any,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Stream an upload to a temp file, validate, hash, then atomically move it in.
 
@@ -195,7 +196,7 @@ def store_upload(
                 rel,
                 size,
                 digest.hexdigest(),
-                dumps({}),
+                dumps(metadata or {}),
                 1 if kind == "reference" else 0,
                 now,
             ),

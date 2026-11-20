@@ -169,8 +169,9 @@ def test_registered_as_unconfirmed_image_tool():
     assert d.requirements_lock == "requirements.lock" and d.python_version == "3.12"
 
 
-def test_draft_is_gated_until_pinned_and_locked():
-    assert not P.MANIFEST_PATH.exists() and not P.LOCKFILE.exists()
+def test_draft_is_gated_until_pinned_and_locked(monkeypatch, tmp_path):
+    monkeypatch.setattr(P, "LOCKFILE", tmp_path / "requirements.lock")  # not generated
+    set_pinned(monkeypatch, P.PoseFinderEngine, pinned=False)
     report = P.PoseFinderEngine().check_compatibility(MAC)
     assert not report.compatible
     assert any("pin_engine.py dwpose" in r for r in report.reasons)
@@ -192,7 +193,8 @@ def test_pin_spec_lists_onnx_only():
     assert "yolox_l.onnx" in spec and "dw-ll_ucoco_384.onnx" in spec and '.pth"' not in spec
 
 
-def test_listed_but_not_installable_while_unconfirmed(settings, monkeypatch):
+def test_listed_but_not_installable_while_unconfirmed(settings, monkeypatch, tmp_path):
+    monkeypatch.setattr(P, "LOCKFILE", tmp_path / "requirements.lock")  # not generated
     set_host(monkeypatch, apple_silicon=True)
     set_pinned(monkeypatch, P.PoseFinderEngine, pinned=True)
     with make_client(settings) as client:
@@ -343,6 +345,11 @@ def _png_size(data: bytes) -> tuple[int, int]:
     return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
 
 
+def _png_pixels(data: bytes) -> bytes:
+    idat = data[data.index(b"IDAT") + 4 : data.index(b"IEND") - 8]
+    return zlib.decompress(idat)
+
+
 def test_render_draws_openpose_colours_on_black():
     pts = [None] * 18
     pts[1], pts[2] = (0.5, 0.2), (0.3, 0.2)  # neck -> right shoulder, first limb (red)
@@ -374,6 +381,8 @@ def test_built_in_figures_are_committed_and_match_the_script():
     for p in index:
         data = (folder / p["file"]).read_bytes()
         assert _png_size(data) == (p["width"], p["height"])
-        # Re-drawing from the stored keypoints gives the committed file exactly.
+        # Re-drawing from the stored keypoints gives the committed pixels exactly
+        # (compared decoded: zlib builds may compress differently).
         points = [None if k is None else tuple(k) for k in p["keypoints"]]
-        assert skeleton.encode_png(skeleton.render(points, p["width"], p["height"])) == data
+        redrawn = skeleton.encode_png(skeleton.render(points, p["width"], p["height"]))
+        assert _png_pixels(redrawn) == _png_pixels(data)

@@ -18,6 +18,7 @@ from rasva.engines.registry import load_class
 from rasva.jobs import repository as repo
 from rasva.jobs.orchestrator import MODEL_TASKS
 from rasva.jobs.states import JobState
+from rasva.services import image_refs
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
 from rasva.services import voices as voice_svc
@@ -94,6 +95,12 @@ def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
             raw = voice_svc.resolve_profile(conn, state.settings.paths, engine.descriptor, raw)
         except voice_svc.VoiceError as exc:
             raise ApiError(422, "invalid_voice", str(exc)) from exc
+    if raw.get("references"):
+        # Reference photos -> local files; asset ids stay in the stored inputs (I1-I4).
+        try:
+            raw = image_refs.resolve(conn, state.settings.paths, body.project_id, raw)
+        except image_refs.ReferenceError as exc:
+            raise ApiError(422, "invalid_reference", str(exc)) from exc
     if body.task == "audio.narrate" and engine is not None:
         # Approved pronunciations change only what the engine reads (PRD §10.2).
         raw, narration_extras = pronunciation_svc.prepare_narration(
@@ -191,6 +198,14 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
             )  # fmt: skip
         except (voice_svc.VoiceError, AttributeError) as exc:
             raise ApiError(422, "invalid_voice", str(exc)) from exc
+    if old["inputs"].get("references"):
+        # Re-resolve: a reference photo may have been deleted since.
+        try:
+            raw = image_refs.resolve(
+                conn, state.settings.paths, old["project_id"], image_refs.unresolve(raw)
+            )
+        except image_refs.ReferenceError as exc:
+            raise ApiError(422, "invalid_reference", str(exc)) from exc
     inputs = {**_validate(state, conn, old["engine_id"], old["task"], raw), **extras}
     job = repo.create(
         conn,

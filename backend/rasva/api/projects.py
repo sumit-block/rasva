@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from rasva.api.deps import DB, State
 from rasva.api.errors import ApiError
 from rasva.services import assets as asset_svc
+from rasva.services import image_refs
 from rasva.services import projects as svc
 
 router = APIRouter(tags=["projects"])
@@ -68,8 +69,13 @@ def upload_asset(
     conn: DB,
     file: Annotated[UploadFile, File()],
     kind: Annotated[Literal["reference", "import"], Form()] = "reference",
+    role: Annotated[str | None, Form(max_length=20)] = None,
 ) -> dict[str, Any]:
     svc.get(conn, project_id)  # 404 if missing
+    try:  # image reference roles (I1-I4 contract): person, garment, pose, background
+        metadata = image_refs.role_for_upload(role) if kind == "reference" else {}
+    except image_refs.ReferenceError as exc:
+        raise ApiError(422, "invalid_role", str(exc)) from exc
     asset = asset_svc.store_upload(
         conn,
         state.settings.paths,
@@ -79,6 +85,7 @@ def upload_asset(
         stream=file.file,
         max_bytes=state.settings.max_upload_bytes,
         preflight=lambda n: state.preflight(conn, n, "upload"),
+        metadata=metadata,
     )
     svc.touch(conn, project_id)
     state.storage.invalidate()

@@ -2,7 +2,8 @@
 
 A job's raw inputs carry ``references: [{asset_id, role}]``. Before the engine's
 ``validate_input`` runs, the jobs API swaps each entry for
-``{asset_id, role, path}`` so the engine (in its worker) can open the file.
+``{asset_id, role, path}`` (plus ``pose_figure: true`` for pose-finder figures)
+so the engine (in its worker) can open the file.
 ``asset_id`` stays in the stored inputs, so Retry can resolve the files again
 and outputs can record which assets they came from.
 
@@ -65,7 +66,10 @@ def resolve(
         path = asset_svc.resolve(paths, asset["rel_path"])
         if not Path(path).is_file():
             raise ReferenceError("A reference photo is missing from disk. Upload it again.")
-        resolved.append({"asset_id": asset["id"], "role": role, "path": str(path)})
+        entry = {"asset_id": asset["id"], "role": role, "path": str(path)}
+        if asset["metadata"].get("kind") == "pose":
+            entry["pose_figure"] = True  # a stick figure from the pose finder (I2)
+        resolved.append(entry)
     return {**inputs, "references": resolved}
 
 
@@ -74,5 +78,7 @@ def unresolve(inputs: dict[str, Any]) -> dict[str, Any]:
     refs = inputs.get("references")
     if not isinstance(refs, list):
         return inputs
-    raw = [{"asset_id": r.get("asset_id"), "role": r.get("role")} for r in refs if isinstance(r, dict)]
+    raw = [
+        {"asset_id": r.get("asset_id"), "role": r.get("role")} for r in refs if isinstance(r, dict)
+    ]
     return {**inputs, "references": raw}

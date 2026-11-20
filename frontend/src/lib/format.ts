@@ -41,6 +41,7 @@ export const STATE_LABEL: Record<JobState, string> = {
 export const TASK_LABEL: Record<string, string> = {
   "diagnostic.tone": "Pipeline check",
   "audio.narrate": "Narration",
+  "audio.assemble": "Chapter export",
   "model.install": "Install engine",
   "model.remove": "Remove engine",
 };
@@ -54,3 +55,11 @@ export const CATEGORY_LABEL: Record<string, string> = {
   caches: "Caches & temp files",
   database_logs: "Database & logs",
 };
+
+export function formatDuration(seconds: number): string {
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
+}

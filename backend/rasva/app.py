@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from rasva import __version__
 from rasva.api import (
     assets,
+    chapters,
     errors,
     experiments,
     jobs,
@@ -80,7 +81,8 @@ def create_app(
     errors.install(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for module in (system, projects, assets, jobs, models, settings, experiments, pronunciations):
+    routers = (system, projects, assets, jobs, models, settings, experiments, pronunciations)
+    for module in (*routers, chapters):
         api.include_router(module.router)
     app.include_router(api)
 

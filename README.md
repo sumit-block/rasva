@@ -134,3 +134,19 @@ engine package. Generate it with
 | A2-006 pronunciation preview | Done: hear an entry (approved or not) with any installed voice, alone or in an example sentence |
 | A2-009 approved-correction persistence | Done: only approved entries apply; original text, engine text and every substitution are stored on the job; retries reuse the same choices |
 | A2-001 Indic engine · A2-002 language detection · A2-003 mixed-language segmentation · A2-004 transliteration | Not started (need an Indic engine candidate pinned and tested on the M2) |
+
+## A4 status: long-form narration and mixing
+
+| Item | Status |
+| --- | --- |
+| Automatic segmentation | Done: sentences grouped into ~200-character segments within paragraphs (PRD §12.1) |
+| Durable per-segment jobs, failure resumption | Done: each segment is its own queued job; a failure or crash affects only that segment; "Retry failed" and restart recovery |
+| Selective regeneration and versions | Done: every generation is a new take; the first becomes current automatically, later ones wait for review (keep current / use new); script edits keep takes of unchanged sentences; voice changes mark segments outdated without deleting audio |
+| Music and effects | Done: your own files; music looped with fades and ducked under speech (look-ahead), effects placed at a sentence; Simple presets (Quiet/Balanced/Present) set levels only |
+| Assembly and export | Done: block-based renderer (constant memory for long chapters), per-segment levelling, click-free joins, -1 dBFS peak ceiling (no clipping), WAV, MP3 via FFmpeg, optional stems that sum to the mix |
+| Long-script and failure tests | Done: 60-minute script segmentation, injected failures and crashes, interruption and restart, cancel, 15-minute block-render memory check |
+
+Known limits: loudness is levelled by speech RMS and limited by peak, not
+measured in LUFS. The built-in resampler is linear, which is fine for speech
+and upsampling; compressed music is decoded and resampled by FFmpeg. Changing a
+pronunciation entry does not mark existing takes as outdated.

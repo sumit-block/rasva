@@ -78,7 +78,7 @@ def list_models(state: State, conn: DB) -> list[dict[str, Any]]:
     return [
         _describe(state, conn, e, facts)
         for e in state.registry.all()
-        if not e.descriptor.experimental
+        if not e.descriptor.experimental and e.descriptor.modality != "tool"
     ]
 
 

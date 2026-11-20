@@ -7,6 +7,7 @@ the real queue -> worker -> output path for ``audio.narrate`` jobs.
 from __future__ import annotations
 
 import math
+import os
 import struct
 import wave
 from typing import Any
@@ -14,6 +15,7 @@ from typing import Any
 from rasva.audio.text import segment
 from rasva.engines.contract import (
     EngineDescriptor,
+    EngineError,
     OutputFile,
     RunContext,
     RunResult,
@@ -40,6 +42,11 @@ class FakeNarrator(KokoroEngine):
         pass
 
     def run(self, task: str, inputs: dict[str, Any], ctx: RunContext) -> RunResult:
+        # Fault markers for long-form recovery tests.
+        if "[[fail]]" in inputs["text"]:
+            raise EngineError("engine_failed", "Injected failure.")
+        if "[[crash]]" in inputs["text"]:
+            os._exit(3)
         segs = segment(inputs["text"])[: 1 if inputs["preview"] else None]
         rate = 8000
         frames = bytearray()

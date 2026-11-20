@@ -10,13 +10,13 @@ dependencies = [
     "psutil>=6.0",
     "python-multipart>=0.0.9",
     "httpx>=0.27",
+    # Audio assembly and mixing (chapter export).
+    "numpy>=2.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    # Only for exercising engine adapters with fake runtimes in tests.
-    "numpy>=2.0",
     "ruff>=0.6",
 ]
 

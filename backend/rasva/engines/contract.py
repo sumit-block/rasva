@@ -25,7 +25,7 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, Field, field_validator
 
 LicenseClass = Literal["permissive", "open-weight", "restricted", "unknown"]
-Modality = Literal["audio", "image", "diagnostic"]
+Modality = Literal["audio", "image", "diagnostic", "tool"]
 
 
 class ModelArtifact(BaseModel):

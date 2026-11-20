@@ -166,3 +166,32 @@ def segment(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> list[Segment]:
                 )
             )
     return out
+
+
+DEFAULT_GROUP_CHARS = 200
+
+
+def group(segments: list[Segment], target_chars: int = DEFAULT_GROUP_CHARS) -> list[Segment]:
+    """Merge consecutive short sentences in a paragraph into ~10-20 s segments.
+
+    PRD §12.1 targets 10-25 s of speech per segment. Grouping keeps the number of
+    jobs manageable for a 60-minute chapter while each segment stays small enough
+    to regenerate on its own. Paragraph boundaries are never merged across.
+    """
+    out: list[Segment] = []
+    for seg in segments:
+        prev = out[-1] if out else None
+        if (
+            prev is not None
+            and prev.paragraph == seg.paragraph
+            and len(prev.text) + 1 + len(seg.text) <= target_chars
+        ):
+            out[-1] = Segment(
+                index=prev.index,
+                text=f"{prev.text} {seg.text}",
+                paragraph=prev.paragraph,
+                pause_after_s=seg.pause_after_s,
+            )
+        else:
+            out.append(Segment(len(out), seg.text, seg.paragraph, seg.pause_after_s))
+    return out

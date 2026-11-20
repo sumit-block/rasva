@@ -12,6 +12,7 @@ from rasva.engines.contract import Engine, EngineDescriptor
 BUILTIN: dict[str, str] = {
     "diagnostic-tone": "rasva.engines.builtin.tone:ToneEngine",
     "kokoro-82m": "rasva.engines.kokoro:KokoroEngine",
+    "audio-mixer": "rasva.engines.builtin.mixer:MixerEngine",
 }
 TEST_ONLY: dict[str, str] = {
     "test-fault": "rasva.engines.builtin.testing:FaultEngine",

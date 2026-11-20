@@ -25,6 +25,7 @@ from rasva.services.installer import ModelStore
 router = APIRouter(tags=["jobs"])
 
 HEARTBEAT_S = 15.0
+INTERNAL_TASKS = frozenset({"audio.assemble"})
 RETRYABLE = {JobState.FAILED, JobState.CANCELED, JobState.INTERRUPTED}
 
 
@@ -62,6 +63,9 @@ def _validate(
 def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
     if body.task in MODEL_TASKS:
         raise ApiError(422, "unsupported_task", "Install or remove engines from Models.")
+    if body.task in INTERNAL_TASKS:
+        # Built only by the chapter export endpoint, from the project's own assets.
+        raise ApiError(422, "unsupported_task", "Export chapters from Audio Studio.")
     project_svc.get(conn, body.project_id)
     engine_id = body.engine_id
     if engine_id is None:

@@ -355,4 +355,108 @@ export const pronunciations = {
     request<Job>(`/pronunciations/${id}/preview`, { method: "POST", body: json(body) }),
 };
 
+export interface Take {
+  id: string;
+  job_id: string;
+  state: JobState;
+  asset_id: string | null;
+  duration_s: number | null;
+  error: string | null;
+  progress: number | null;
+  settings: Record<string, unknown>;
+  text: string;
+  reviewed: boolean;
+  created_at: string;
+}
+
+export type SegmentStatus = "pending" | "generating" | "failed" | "ready" | "outdated" | "needs_review";
+
+export interface Segment {
+  id: string;
+  position: number;
+  paragraph: number;
+  text: string;
+  pause_after_s: number;
+  current_take_id: string | null;
+  current: Take | null;
+  takes: Take[];
+  status: SegmentStatus;
+}
+
+export interface MixTrack {
+  id: string;
+  kind: "music" | "effect";
+  asset_id: string;
+  original_name: string;
+  anchor_segment: number | null;
+  offset_s: number;
+  gain_db: number;
+  fade_in_s: number;
+  fade_out_s: number;
+  loop: boolean;
+  duck: boolean;
+}
+
+export interface ChapterSettings {
+  engine_id: string;
+  voice_id: string;
+  speed: number;
+  use_dictionary: boolean;
+}
+
+export interface Chapter {
+  id: string;
+  project_id: string;
+  title: string;
+  script: string;
+  settings: ChapterSettings;
+  mix: { duck_db?: number };
+  segments: Segment[];
+  summary: { segments: number; counts: Partial<Record<SegmentStatus, number>>; duration_s: number; exportable: boolean };
+  tracks: MixTrack[];
+  exports: Job[];
+  mp3_available: boolean;
+  music_presets: string[];
+}
+
+export interface ChapterListItem {
+  id: string;
+  title: string;
+  position: number;
+  segments: number;
+}
+
+export type TrackInput = Partial<Omit<MixTrack, "id" | "original_name">> & { preset?: string };
+
+export const chapters = {
+  list: (projectId: string) => request<ChapterListItem[]>(`/projects/${projectId}/chapters`),
+  create: (projectId: string, body: { title: string; script: string; settings: Partial<ChapterSettings> }) =>
+    request<Chapter>(`/projects/${projectId}/chapters`, { method: "POST", body: json(body) }),
+  get: (id: string) => request<Chapter>(`/chapters/${id}`),
+  update: (id: string, body: { title?: string; script?: string; settings?: Partial<ChapterSettings>; mix?: { duck_db: number } }) =>
+    request<Chapter>(`/chapters/${id}`, { method: "PATCH", body: json(body) }),
+  generate: (id: string, scope: "needed" | "failed" | "all" = "needed") =>
+    request<Chapter>(`/chapters/${id}/generate`, { method: "POST", body: json({ scope }) }),
+  cancel: (id: string) => request<Chapter>(`/chapters/${id}/cancel`, { method: "POST" }),
+  regenerate: (segmentId: string) => request<Chapter>(`/segments/${segmentId}/regenerate`, { method: "POST" }),
+  useTake: (segmentId: string, takeId: string) =>
+    request<Chapter>(`/segments/${segmentId}/takes/${takeId}/use`, { method: "POST" }),
+  addTrack: (id: string, body: TrackInput) => request<Chapter>(`/chapters/${id}/tracks`, { method: "POST", body: json(body) }),
+  updateTrack: (trackId: string, body: TrackInput) =>
+    request<Chapter>(`/tracks/${trackId}`, { method: "PATCH", body: json(body) }),
+  removeTrack: (trackId: string) => request<Chapter>(`/tracks/${trackId}`, { method: "DELETE" }),
+  export: (id: string, body: { formats: ("wav" | "mp3")[]; stems: boolean }) =>
+    request<Job>(`/chapters/${id}/export`, { method: "POST", body: json(body) }),
+};
+
+export const projectAssets = (projectId: string, kind?: "reference" | "import" | "output") =>
+  request<Asset[]>(`/projects/${projectId}/assets${kind ? `?kind=${kind}` : ""}`);
+
+export async function uploadAsset(projectId: string, file: File, kind: "reference" | "import"): Promise<Asset> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", kind);
+  return request<Asset>(`/projects/${projectId}/assets`, { method: "POST", body: form });
+}
+
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

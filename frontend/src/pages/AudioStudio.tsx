@@ -9,11 +9,25 @@ import { EmptyState, Notice } from "@/components/ui/notice";
 import { useAsync } from "@/hooks/useAsync";
 import { useJobs } from "@/hooks/useJobs";
 import { usePrefs } from "@/hooks/usePrefs";
-import { api, isUsable, pronunciations, type AppliedPronunciation, type EngineInfo, type Project, type Voice } from "@/lib/api";
+import {
+  api,
+  chapters,
+  isUsable,
+  pronunciations,
+  TERMINAL_STATES,
+  type AppliedPronunciation,
+  type Chapter,
+  type EngineInfo,
+  type Project,
+  type Voice,
+} from "@/lib/api";
+import { ChapterPanel } from "@/components/audio/ChapterPanel";
+import { ExportPanel } from "@/components/audio/ExportPanel";
+import { MixPanel } from "@/components/audio/MixPanel";
 import { hasDevanagari } from "@/lib/script";
 import { cn } from "@/lib/utils";
 
-const MAX_CHARS = 5000;
+const MAX_CHARS = 200_000; // per chapter; each sentence is a separate job
 const LANG_LABEL = { en: "English", hi: "Hindi" } as const;
 
 function VoicePicker({ voices, value, onChange }: { voices: Voice[]; value: string; onChange: (id: string) => void }) {
@@ -125,6 +139,10 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
   const projectId = params.get("project") ?? projects[0]?.id ?? null;
   const project = projects.find((p) => p.id === projectId);
 
+  const chapterList = useAsync(() => (projectId ? chapters.list(projectId) : Promise.resolve([])), [projectId]);
+  const chapterId = params.get("chapter") ?? chapterList.data?.[0]?.id ?? null;
+  const [chapter, setChapter] = useState<Chapter>();
+
   const [script, setScript] = useState("");
   const [voiceId, setVoiceId] = useState<string>(engine.voices[0]?.id ?? "");
   const [speed, setSpeed] = useState(1);
@@ -133,68 +151,72 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const loadedFor = useRef<string | null>(null);
-  const lastSaved = useRef<string>("");
+  const lastSaved = useRef("");
+  const creating = useRef<Promise<string> | null>(null);
 
-  // Load the project's draft once per project.
-  useEffect(() => {
-    if (!project || loadedFor.current === project.id) return;
-    loadedFor.current = project.id;
-    const s = project.settings;
-    setScript(typeof s.script === "string" ? s.script : "");
-    if (typeof s.voice_id === "string" && engine.voices.some((v) => v.id === s.voice_id)) setVoiceId(s.voice_id);
-    if (typeof s.speed === "number") setSpeed(s.speed);
-    lastSaved.current = JSON.stringify({
-      script: typeof s.script === "string" ? s.script : "",
-      voice_id: s.voice_id,
-      speed: s.speed,
-    });
-    setSaved("idle");
-  }, [project, engine.voices]);
+  const snapshot = (sc: string, v: string, sp: number, d: boolean) => JSON.stringify([sc, v, sp, d]);
 
-  // Autosave the draft (PRD §26) shortly after typing stops. A first-time user
-  // has no project yet: create one on the first keystroke so nothing is lost.
+  // Load the selected chapter, and keep it fresh while it is generating or exporting.
   useEffect(() => {
-    if (!project) {
-      if (script.trim()) void ensureProject();
+    if (!chapterId) {
+      setChapter(undefined);
       return;
     }
-    if (loadedFor.current !== project.id) return;
-    const draft = { script, voice_id: voiceId, speed };
-    const snapshot = JSON.stringify(draft);
-    if (snapshot === lastSaved.current) return;
-    setSaved("saving");
-    const t = window.setTimeout(() => {
-      api.updateProject(project.id, { settings: draft }).then(
-        () => {
-          lastSaved.current = snapshot;
-          setSaved("saved");
-        },
-        () => setSaved("error"),
-      );
-    }, 800);
-    return () => window.clearTimeout(t);
-  }, [script, voiceId, speed, project]);
+    let alive = true;
+    const load = () => chapters.get(chapterId).then((c) => alive && setChapter(c), () => undefined);
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, [chapterId]);
+  const busy = !!chapter && ((chapter.summary.counts.generating ?? 0) > 0 ||
+    chapter.exports.some((e) => !TERMINAL_STATES.has(e.state)));
+  useEffect(() => {
+    if (!busy || !chapterId) return;
+    const t = window.setInterval(() => chapters.get(chapterId).then(setChapter, () => undefined), 2000);
+    return () => window.clearInterval(t);
+  }, [busy, chapterId]);
 
-  const voice = engine.voices.find((v) => v.id === voiceId);
-  const devanagariWithEnglish = voice?.language === "en" && hasDevanagari(script);
-  const tooLong = script.length > MAX_CHARS;
-  const blocked = !script.trim() || !voice || devanagariWithEnglish || tooLong || submitting;
+  // Put the chapter's script and voice into the editor once per chapter. A project
+  // without chapters starts from its older single-script draft, if any.
+  useEffect(() => {
+    if (chapter && loadedFor.current !== chapter.id) {
+      loadedFor.current = chapter.id;
+      setScript(chapter.script);
+      setVoiceId(chapter.settings.voice_id);
+      setSpeed(chapter.settings.speed);
+      setUseDictionary(chapter.settings.use_dictionary);
+      lastSaved.current = snapshot(chapter.script, chapter.settings.voice_id, chapter.settings.speed, chapter.settings.use_dictionary);
+      setSaved("idle");
+    } else if (!chapterId && project && chapterList.data && loadedFor.current !== `project:${project.id}`) {
+      loadedFor.current = `project:${project.id}`;
+      setScript(typeof project.settings.script === "string" ? project.settings.script : "");
+      lastSaved.current = "";
+    }
+  }, [chapter, chapterId, project, chapterList.data]);
 
-  const creating = useRef<Promise<Project> | null>(null);
-
-  /** Create a project. With `keepDraft`, the text already typed becomes its script. */
-  const createProject = async (keepDraft = false) => {
-    const name = `Narration ${new Date().toLocaleDateString()}`;
-    const p = await api.createProject({ name, module: "audio" });
-    if (keepDraft) loadedFor.current = p.id; // don't overwrite the typed draft with empty settings
+  const createProject = async () => {
+    const p = await api.createProject({ name: `Narration ${new Date().toLocaleDateString()}`, module: "audio" });
     await reloadProjects();
-    setParams({ project: p.id });
     return p;
   };
 
-  const ensureProject = () => {
-    if (project) return Promise.resolve(project);
-    creating.current ??= createProject(true).catch((e) => {
+  /** The chapter for the text in the editor, created (with project) on first use. */
+  const ensureChapter = (): Promise<string> => {
+    if (chapterId) return Promise.resolve(chapterId);
+    creating.current ??= (async () => {
+      const target = project ?? (await createProject());
+      const created = await chapters.create(target.id, {
+        title: "Chapter 1", script,
+        settings: { engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary },
+      });
+      loadedFor.current = created.id; // keep the typed draft
+      lastSaved.current = snapshot(script, voiceId, speed, useDictionary);
+      setChapter(created);
+      setParams({ project: target.id, chapter: created.id });
+      await chapterList.reload();
+      return created.id;
+    })().catch((e) => {
       creating.current = null;
       setError((e as Error).message);
       throw e;
@@ -202,19 +224,42 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     return creating.current;
   };
 
-  const generate = async (preview: boolean) => {
+  const save = async () => {
+    const id = await ensureChapter();
+    const snap = snapshot(script, voiceId, speed, useDictionary);
+    if (snap === lastSaved.current) return id;
+    const updated = await chapters.update(id, {
+      script, settings: { engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary },
+    });
+    lastSaved.current = snap;
+    setChapter(updated);
+    return id;
+  };
+
+  // Autosave (PRD §26): shortly after typing stops. Creates the project and
+  // chapter on the first keystroke so nothing is lost.
+  useEffect(() => {
+    if (!script.trim() && !chapterId) return;
+    if (chapterId && loadedFor.current !== chapterId) return;
+    if (snapshot(script, voiceId, speed, useDictionary) === lastSaved.current) return;
+    setSaved("saving");
+    const t = window.setTimeout(() => {
+      save().then(() => setSaved("saved"), () => setSaved("error"));
+    }, 1000);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [script, voiceId, speed, useDictionary, chapterId]);
+
+  const voice = engine.voices.find((v) => v.id === voiceId);
+  const devanagariWithEnglish = voice?.language === "en" && hasDevanagari(script);
+  const tooLong = script.length > MAX_CHARS;
+  const blocked = !script.trim() || !voice || devanagariWithEnglish || tooLong || submitting;
+
+  const run = async (fn: () => Promise<void>) => {
     setSubmitting(true);
     setError(undefined);
     try {
-      const target = await ensureProject();
-      upsert(
-        await api.createJob({
-          project_id: target.id,
-          task: "audio.narrate",
-          engine_id: engine.id,
-          inputs: { text: script, voice_id: voiceId, speed, preview, use_dictionary: useDictionary },
-        }),
-      );
+      await fn();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -222,36 +267,76 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     }
   };
 
-  const results = useMemo(
-    () => jobs.filter((j) => j.task === "audio.narrate" && j.project_id === projectId),
-    [jobs, projectId],
+  const preview = () =>
+    run(async () => {
+      await ensureChapter();
+      const target = projects.find((p) => p.id === (params.get("project") ?? projectId)) ?? project;
+      const pid = target?.id ?? chapter?.project_id;
+      if (!pid) return;
+      upsert(await api.createJob({
+        project_id: pid, task: "audio.narrate", engine_id: engine.id,
+        // Only the first sentence is spoken; send a bounded excerpt.
+        inputs: { text: script.slice(0, 1000), voice_id: voiceId, speed, preview: true, use_dictionary: useDictionary },
+      }));
+    });
+
+  const generateAll = () =>
+    run(async () => {
+      const id = await save();
+      setChapter(await chapters.generate(id, "needed"));
+    });
+
+  const newChapter = () =>
+    run(async () => {
+      const target = project ?? (await createProject());
+      const n = (chapterList.data?.length ?? 0) + 1;
+      const created = await chapters.create(target.id, {
+        title: `Chapter ${n}`, script: "",
+        settings: { engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary },
+      });
+      await chapterList.reload();
+      setParams({ project: target.id, chapter: created.id });
+    });
+
+  const previews = useMemo(
+    () => jobs.filter((j) => j.task === "audio.narrate" && j.project_id === (project?.id ?? chapter?.project_id) && j.inputs.preview),
+    [jobs, project, chapter],
   );
+  const pendingCount = chapter
+    ? (chapter.summary.counts.pending ?? 0) + (chapter.summary.counts.failed ?? 0) + (chapter.summary.counts.outdated ?? 0)
+    : 0;
 
   return (
     <>
       <PageHeader
         title="Audio Studio"
-        description="Write a script, choose a voice, preview a sentence, then create the full narration."
+        description="Write a script, choose a voice, preview a sentence, then generate and export the narration."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor="project">Project</label>
-            <select
-              id="project"
-              value={projectId ?? ""}
-              onChange={(e) => setParams({ project: e.target.value })}
-              className="min-h-11 max-w-60 rounded-lg border border-border bg-surface px-3 text-sm"
-            >
+            <select id="project" value={projectId ?? ""} onChange={(e) => setParams({ project: e.target.value })}
+              className="min-h-11 max-w-60 rounded-lg border border-border bg-surface px-3 text-sm">
               {projects.length === 0 && <option value="">New project</option>}
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <Button variant="secondary" onClick={() => void createProject()}>
+            <Button variant="secondary" onClick={() => void run(async () => { const p = await createProject(); setParams({ project: p.id }); })}>
               <Plus aria-hidden /> New
             </Button>
           </div>
         }
       />
+
+      {(chapterList.data?.length ?? 0) > 0 && (
+        <nav aria-label="Chapters" className="mb-4 flex gap-2 overflow-x-auto pb-1">
+          {chapterList.data!.map((c) => (
+            <button key={c.id} onClick={() => setParams({ project: projectId!, chapter: c.id })} aria-current={c.id === chapterId ? "page" : undefined}
+              className={cn("min-h-11 shrink-0 rounded-lg border px-3 text-sm", c.id === chapterId ? "border-accent bg-accent/10 text-fg" : "border-border text-muted")}>
+              {c.title}
+            </button>
+          ))}
+          <Button variant="ghost" className="shrink-0" onClick={() => void newChapter()}><Plus aria-hidden /> Chapter</Button>
+        </nav>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card>
@@ -262,41 +347,28 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
             </span>
           </div>
           <label htmlFor="script" className="sr-only">Script</label>
-          <textarea
-            id="script"
-            value={script}
-            onChange={(e) => setScript(e.target.value)}
-            rows={10}
-            placeholder={"Paste or write your script. Hindi (देवनागरी), English or Roman Hinglish.\n\nBlank lines become longer pauses."}
-            className="mt-3 w-full resize-y rounded-lg border border-border bg-bg p-3 text-base leading-relaxed text-fg placeholder:text-muted"
-          />
+          <textarea id="script" value={script} onChange={(e) => setScript(e.target.value)} rows={10}
+            placeholder={"Paste or write your script. Hindi (देवनागरी), English or Roman Hinglish.\n\nBlank lines become longer pauses. Long chapters are fine: each sentence is generated separately."}
+            className="mt-3 w-full resize-y rounded-lg border border-border bg-bg p-3 text-base leading-relaxed text-fg placeholder:text-muted" />
           <div className="mt-1 flex justify-between text-xs text-muted">
             <span>{hasDevanagari(script) ? "Contains Devanagari" : script.trim() ? "Roman letters" : ""}</span>
-            <span className={cn(tooLong && "text-danger")}>
-              {script.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}
-            </span>
+            <span className={cn(tooLong && "text-danger")}>{script.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</span>
           </div>
-          <PronunciationCheck text={script} language={voice?.language} projectId={projectId}
+          <PronunciationCheck text={script.slice(0, 20000)} language={voice?.language} projectId={projectId}
             enabled={useDictionary} onToggle={setUseDictionary} />
           {devanagariWithEnglish && (
             <Notice tone="error" className="mt-3">
-              This script contains Devanagari, which English voices skip. Choose a Hindi voice, or write those words in
-              Roman letters.
+              This script contains Devanagari, which English voices skip. Choose a Hindi voice, or write those words in Roman letters.
             </Notice>
           )}
-          {tooLong && (
-            <Notice tone="error" className="mt-3">
-              This engine narrates up to {MAX_CHARS.toLocaleString()} characters at a time for now. Long-form chapters
-              are coming.
-            </Notice>
-          )}
+          {tooLong && <Notice tone="error" className="mt-3">A chapter can hold up to {MAX_CHARS.toLocaleString()} characters. Split it into chapters.</Notice>}
           {error && <Notice tone="error" className="mt-3">{error}</Notice>}
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="secondary" disabled={blocked} onClick={() => void generate(true)}>
+            <Button variant="secondary" disabled={blocked} onClick={() => void preview()}>
               <Play aria-hidden /> Preview first sentence
             </Button>
-            <Button disabled={blocked} onClick={() => void generate(false)}>
-              <Sparkles aria-hidden /> Create narration
+            <Button disabled={blocked} onClick={() => void generateAll()}>
+              <Sparkles aria-hidden /> {chapter && chapter.segments.some((s) => s.current) ? (pendingCount ? `Generate ${pendingCount} remaining` : "Generate changes") : "Generate narration"}
             </Button>
           </div>
         </Card>
@@ -304,38 +376,31 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
         <Card>
           <CardTitle>Voice</CardTitle>
           <CardDescription>{engine.display_name}: {engine.summary}</CardDescription>
-          <div className="mt-4">
-            <VoicePicker voices={engine.voices} value={voiceId} onChange={setVoiceId} />
-          </div>
+          <div className="mt-4"><VoicePicker voices={engine.voices} value={voiceId} onChange={setVoiceId} /></div>
           {prefs.mode === "advanced" && engine.features.includes("speed") && (
             <label className="mt-4 block text-sm">
-              <span className="mb-1 flex justify-between font-medium">
-                Speed <span className="text-muted tabular-nums">{speed.toFixed(2)}×</span>
-              </span>
-              <input
-                type="range"
-                min={0.5}
-                max={2}
-                step={0.05}
-                value={speed}
-                onChange={(e) => setSpeed(Number(e.target.value))}
-                className="w-full accent-[var(--accent)]"
-              />
+              <span className="mb-1 flex justify-between font-medium">Speed <span className="text-muted tabular-nums">{speed.toFixed(2)}×</span></span>
+              <input type="range" min={0.5} max={2} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} className="w-full accent-[var(--accent)]" />
             </label>
           )}
+          {chapter && chapter.segments.some((s) => s.current) && (
+            <p className="mt-4 text-xs text-muted">Changing the voice marks existing sentences as out of date; they keep playing until you update them.</p>
+          )}
           <p className="mt-4 text-xs text-muted">Generated speech is labelled as synthetic in its file details.</p>
+          {previews.length > 0 && (
+            <ul className="mt-4 space-y-2">{previews.slice(0, 3).map((j) => <JobRow key={j.id} job={j} />)}</ul>
+          )}
         </Card>
       </div>
 
-      <h2 className="mt-8 mb-3 text-lg font-semibold">Results</h2>
-      {results.length === 0 ? (
-        <p className="text-sm text-muted">Previews and narrations for this project appear here.</p>
-      ) : (
-        <ul className="space-y-3" aria-live="polite">
-          {results.map((j) => (
-            <JobRow key={j.id} job={j} />
-          ))}
-        </ul>
+      {chapter && chapter.segments.length > 0 && (
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <ChapterPanel chapter={chapter} onChange={setChapter} />
+          <div className="space-y-4">
+            <MixPanel chapter={chapter} onChange={setChapter} />
+            <ExportPanel chapter={chapter} onExported={() => void chapters.get(chapter.id).then(setChapter)} />
+          </div>
+        </div>
       )}
     </>
   );

@@ -18,8 +18,11 @@ def get_settings(conn: DB) -> dict[str, Any]:
 
 @router.patch("/settings")
 def update_settings(body: dict[str, Any], state: State, conn: DB, client: Client) -> dict[str, Any]:
-    if client.get("kind") != "local" and any(k.startswith(("storage.", "lan.")) for k in body):
-        raise ApiError(403, "mac_only", "Storage settings can only be changed on the Mac.")
+    mac_only = ("storage.", "lan.", "memory.")
+    if client.get("kind") != "local" and any(k.startswith(mac_only) for k in body):
+        raise ApiError(
+            403, "mac_only", "Storage and memory settings can only be changed on the Mac."
+        )
     store = SettingsStore(conn)
     validated = {k: validate(k, v) for k, v in body.items()}  # all-or-nothing
     for key, value in validated.items():

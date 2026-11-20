@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from rasva import __version__
 from rasva.api.deps import DB, Client, State
+from rasva.services import memory as memory_svc
 from rasva.services import system_check
 from rasva.services.settings_store import SettingsStore
 from rasva.services.storage import PLANNING_BANDS_GB
@@ -49,12 +50,24 @@ def check(state: State, conn: DB) -> dict[str, Any]:
     return system_check.run_checks(s["free_disk_bytes"], max(needed, 0))
 
 
+def _memory() -> dict[str, Any]:
+    """System memory as psutil reports it (PRD §24). ``available`` on macOS is free
+    plus inactive memory; it is not Activity Monitor's memory-pressure figure."""
+    r = memory_svc.read()
+    return {
+        "total_bytes": r.total_bytes,
+        "available_bytes": r.available_bytes,
+        "level": memory_svc.level(r),
+    }
+
+
 @router.get("/status")
 def status(state: State, conn: DB, client: Client) -> dict[str, Any]:
     """Compact header status: Mac readiness, active job, storage remaining (PRD §7.3)."""
     s = _storage(state, conn)
     return {
         "orchestrator": state.orchestrator.status(),
+        "memory": _memory(),
         "storage": {k: s[k] for k in ("used_bytes", "budget_bytes", "remaining_bytes", "level")},
         "settings": SettingsStore(conn).all(),
         "client": {"kind": client.get("kind"), "device": client.get("device")},

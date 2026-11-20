@@ -23,6 +23,7 @@ import {
   type Voice,
 } from "@/lib/api";
 import { ChapterPanel } from "@/components/audio/ChapterPanel";
+import { LanguagePanel } from "@/components/audio/LanguagePanel";
 import { ExportPanel } from "@/components/audio/ExportPanel";
 import { MixPanel } from "@/components/audio/MixPanel";
 import { hasDevanagari } from "@/lib/script";
@@ -401,6 +402,7 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
             <span>{hasDevanagari(script) ? "Contains Devanagari" : script.trim() ? "Roman letters" : ""}</span>
             <span className={cn(tooLong && "text-danger")}>{script.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</span>
           </div>
+          <LanguagePanel script={script} voiceLanguage={voice?.language} onChange={setScript} />
           <PronunciationCheck text={script.slice(0, 20000)} language={voice?.language} projectId={projectId}
             enabled={useDictionary} onToggle={setUseDictionary} />
           {devanagariWithEnglish && (

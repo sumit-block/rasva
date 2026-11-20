@@ -537,4 +537,34 @@ export interface Recommendation {
 export const recommendation = (language: "hi" | "en") =>
   request<Recommendation>(`/audio/recommendation?language=${language}`);
 
+export type SentenceLanguage = "hi" | "hinglish" | "en" | "mixed" | "unknown";
+
+export interface LanguageAnalysis {
+  sentences: { index: number; text: string; language: SentenceLanguage; confidence: number }[];
+  summary: { counts: Partial<Record<SentenceLanguage, number>>; dominant: SentenceLanguage; uncertain: number };
+}
+
+export interface WordSuggestion {
+  original: string;
+  suggestion: string;
+  source: "name" | "word" | "rule";
+  confident: boolean;
+  start: number;
+  end: number;
+}
+
+export interface TransliterationSentence {
+  index: number;
+  original: string;
+  confidence: number;
+  words: WordSuggestion[];
+  suggested: string;
+}
+
+export const languageTools = {
+  analyze: (text: string) => request<LanguageAnalysis>("/audio/analyze", { method: "POST", body: json({ text }) }),
+  transliterate: (text: string) =>
+    request<{ sentences: TransliterationSentence[] }>("/audio/transliterate", { method: "POST", body: json({ text }) }),
+};
+
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

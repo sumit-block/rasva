@@ -20,6 +20,7 @@ import sqlite3
 from collections import defaultdict
 from typing import Any
 
+from rasva.audio.language import classify
 from rasva.audio.text import group, segment
 from rasva.db import dumps, loads, new_id, transaction, utcnow
 from rasva.engines.contract import EngineError
@@ -309,6 +310,7 @@ def detail(conn: sqlite3.Connection, chapter_id: str) -> dict[str, Any]:
     duration = 0.0
     for seg in segments:
         seg["status"] = _derive(conn, chapter, seg)
+        seg["language"], seg["language_confidence"] = classify(seg["text"])
         counts[seg["status"]] += 1
         if seg["current"] and seg["current"]["duration_s"]:
             duration += float(seg["current"]["duration_s"]) + seg["pause_after_s"]

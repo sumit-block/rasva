@@ -40,8 +40,10 @@ loaded. The launcher looks for each tool itself:
 - **Node:** the newest nvm install that passes the same version test as
   `start.sh` (20.19+ or 22.12+), then Homebrew `node@22` and `node`. Node is only
   needed when the UI has to be rebuilt.
-- **The server's `PATH`:** it starts with Homebrew first, so the server and
-  engine installs find `ffmpeg` and `uv` as they do from the terminal.
+- **The server's `PATH`:** python.org's Python (as its installer adds to shell
+  profiles), then Homebrew, then the system. A new backend environment gets
+  the same Python as from the terminal, and the server finds `ffmpeg` and
+  `uv`. An existing `backend/.venv` is kept as it is.
 
 ### Single instance and stopping
 
@@ -63,7 +65,9 @@ loaded. The launcher looks for each tool itself:
   is. The cases covered: Node, uv or the repository not found; `npm ci`, the
   build or `uv sync` failing; the port taken; no answer within 120 s.
 - The log is `logs/launcher.log` in the data folder. It is replaced once it
-  passes 5 MB, and it also receives the server's console output.
+  passes 5 MB. It also receives the server's console output: the same log
+  records as the server's own log, which follow the privacy rules. Engine
+  workers write to their own logs, not here.
 - Progress messages ("Building the interface…") use notifications. macOS may
   hide those, so nothing important relies on them.
 
@@ -79,9 +83,9 @@ one.
 
 ## Privacy prompt: repository in Downloads, Desktop or Documents
 
-macOS protects these folders. The first time Rasva Studio runs from a
-repository there, macOS should ask whether it may access the folder. Choose
-**Allow**.
+macOS protects these folders. The first time each app (Rasva Studio, then Stop
+Rasva) runs from a repository there, macOS should ask whether it may access the
+folder. Choose **Allow**.
 
 - Remaking the apps changes their ad-hoc signature, so macOS may ask again.
 - If you chose Don't Allow, the app explains how to fix it in System Settings
@@ -129,6 +133,10 @@ Tested on the M2 on 2026-11-20 with `RASVA_HOME` and ports 8781–8783:
   - Stop Rasva stopped the server, and the main app then left the Dock by
     itself.
 - **Single instance:** two simultaneous cold starts gave exactly one server.
+- **Slow health check.** A Rasva process listening on the port counts as
+  running even if the health check times out (a heavy job can cause this). It
+  is never reported as "another program". The Dock app also needs two stopped
+  readings in a row before it leaves.
 - **Port taken by another program:** a refusal for both start and stop.
 - **Failure alert:** a real alert was shown and dismissed itself.
 
@@ -137,6 +145,8 @@ Needs the owner, by hand:
 - **Finder double-click** on the apps made into `~/Applications`, with the
   repository where it is now (`~/Downloads/...`). Expect one prompt to allow
   access to Downloads. Rasva should then open in the browser.
+- **Quit while starting.** Quitting Rasva Studio during a first build leaves
+  the start running. Use Stop Rasva afterwards if you meant to cancel.
 - **Gatekeeper.** Apps made locally carry no quarantine flag, so none is
   expected. If macOS still refuses, right-click the app › Open once.
 - **First launch after a `git pull` that changes the UI.** The interface

@@ -82,14 +82,19 @@ on explain(n, msg)
 	end if
 end explain
 
--- 0 running, 3 starting, 2 port used by another program, 1 stopped; other values are errors.
+-- 0 running, 3 starting, 2 port used by another program, 1 stopped, -1 launcher
+-- error (kept in lastNum/lastMsg). Silent: callers decide whether to explain.
+property lastNum : 0
+property lastMsg : ""
+
 on state()
 	try
 		launcher("status")
 		return 0
 	on error msg number n
 		if n is in {1, 2, 3} then return n
-		explain(n, msg)
+		set lastNum to n
+		set lastMsg to msg
 		return -1
 	end try
 end state
@@ -97,11 +102,13 @@ end state
 
 MAIN_APPLET="$COMMON"'
 property startedAt : missing value
+property misses : 0
 
 on run
 	set startedAt to current date
 	set s to state()
 	if s is -1 then
+		explain(lastNum, lastMsg)
 		quit
 	else if s is 0 then
 		launcher("open")
@@ -115,22 +122,24 @@ on reopen
 	if state() is 0 then launcher("open")
 end reopen
 
--- Leave the Dock once Rasva is no longer running (stopped elsewhere, failed to start).
+-- Leave the Dock once Rasva is no longer running (stopped elsewhere, failed to
+-- start). Two stopped readings in a row, so one slow check never quits it.
 on idle
 	if startedAt is not missing value and ((current date) - startedAt) > 15 then
 		set s to state()
-		if s is not 0 and s is not 3 then quit
+		if s is 0 or s is 3 then
+			set misses to 0
+		else
+			set misses to misses + 1
+			if misses >= 2 then quit
+		end if
 	end if
 	return 5
 end idle
 
+-- Quitting stops Rasva if it runs. Never refuse to quit (that would block logout).
 on quit
-	set s to state()
-	if s is 3 then
-		display alert "Rasva Studio is still starting" message "Quit again once it has opened in the browser." giving up after 15
-		return
-	end if
-	if s is 0 then
+	if state() is 0 then
 		try
 			launcher("stop")
 		end try
@@ -154,11 +163,13 @@ make_app() {  # make_app "Display Name" bundle-id-tail applet-source [stay-open]
   local app="$DEST/$name.app"
   local work; work="$(mktemp -d "${TMPDIR:-/tmp}/rasva-app.XXXXXX")"
   printf '%s\n' "$src" >"$work/applet.applescript"
-  if [ -n "$stay" ]; then
-    /usr/bin/osacompile -s -o "$work/$name.app" "$work/applet.applescript"
-  else
-    /usr/bin/osacompile -o "$work/$name.app" "$work/applet.applescript"
+  # osacompile prints a harmless "replacing existing signature"; show anything else.
+  local flags="" err
+  [ -n "$stay" ] && flags="-s"
+  if ! err="$(/usr/bin/osacompile $flags -o "$work/$name.app" "$work/applet.applescript" 2>&1)"; then
+    printf '%s\n' "$err" >&2; rm -rf "$work"; exit 1
   fi
+  printf '%s\n' "$err" | grep -v 'replacing existing signature' >&2 || true
   local plist="$work/$name.app/Contents/Info.plist"
   /usr/bin/plutil -replace CFBundleIdentifier -string "$id" "$plist"
   /usr/bin/plutil -replace CFBundleName -string "$name" "$plist"

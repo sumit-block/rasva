@@ -21,9 +21,12 @@ LOG="$LOG_DIR/launcher.log"
 LOCK="$HOME_DIR/.launcher.lock"
 START_TIMEOUT="${RASVA_START_TIMEOUT:-120}"   # seconds to wait for the server to answer
 
-# Homebrew (Apple silicon and Intel) first, then the system. The server needs this
-# PATH too: it looks up ffmpeg and uv with shutil.which.
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# What a login shell on this Mac would have: python.org's Python first (its
+# installer adds this to shell profiles, so uv picks the same interpreter for a
+# new environment as in the terminal), then Homebrew (Apple silicon and Intel),
+# then the system. The server needs this PATH too: it looks up ffmpeg and uv
+# with shutil.which.
+export PATH="/Library/Frameworks/Python.framework/Versions/Current/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 mkdir -p "$LOG_DIR"
 # Keep the launcher log small: start over once it passes 5 MB.
@@ -58,13 +61,27 @@ $LOG"
   exit 1
 }
 
-# 0 = Rasva answers on PORT, 1 = nothing listens, 2 = something else holds the port.
+# PIDs of Rasva servers listening on PORT (verified by command line, never blind).
+rasva_pids() {
+  local pid cmd
+  for pid in $(/usr/sbin/lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | sort -u); do
+    cmd="$(/bin/ps -o command= -p "$pid" 2>/dev/null)"
+    case "$cmd" in
+      *" -m rasva"|*" -m rasva "*) printf '%s\n' "$pid" ;;
+    esac
+  done
+}
+
+# 0 = Rasva runs on PORT, 1 = nothing listens, 2 = something else holds the port.
+# A Rasva process listening on the port counts as running even when the health
+# check is slow (a heavy job can starve it); uvicorn only listens once started up.
 probe() {
   local body
   body="$(/usr/bin/curl -s --max-time 2 "$HEALTH_URL" 2>/dev/null)"
   case "$body" in
     *'"status":"ok"'*'"schema_version"'*) return 0 ;;
   esac
+  [ -n "$(rasva_pids)" ] && return 0
   if /usr/sbin/lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
     return 2
   fi
@@ -200,17 +217,6 @@ os.execv(sys.executable, [sys.executable, "-m", "rasva"])') </dev/null >>"$LOG" 
     sleep 1; i=$((i + 1))
   done
   fail "The server did not answer on port $PORT within $START_TIMEOUT seconds."
-}
-
-# PIDs of Rasva servers listening on PORT (verified by command line, never blind).
-rasva_pids() {
-  local pid cmd
-  for pid in $(/usr/sbin/lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | sort -u); do
-    cmd="$(/bin/ps -o command= -p "$pid" 2>/dev/null)"
-    case "$cmd" in
-      *" -m rasva"|*" -m rasva "*) printf '%s\n' "$pid" ;;
-    esac
-  done
 }
 
 cmd_stop() {

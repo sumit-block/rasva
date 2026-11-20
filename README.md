@@ -38,8 +38,8 @@ scripts/make_mac_app.sh                 # or: --dest <folder>; default ~/Applica
   **Stop Rasva**.
 - If something fails, a dialog says what went wrong and where the log is
   (`logs/launcher.log` in the data folder).
-- If this folder is inside Downloads, Desktop or Documents, macOS asks once
-  for permission to read it.
+- If this folder is inside Downloads, Desktop or Documents, macOS asks each
+  app once for permission to read it (again after remaking the apps).
 - Uninstall: quit Rasva Studio and move both apps to the Trash. Your data is
   not touched.
 

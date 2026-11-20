@@ -349,6 +349,7 @@ def test_tracks_must_be_this_projects_audio(settings, tmp_path):
 def test_block_mixer_memory_on_a_long_chapter(tmp_path):
     """15 minutes at 48 kHz stereo with a looped bed stays block-sized in memory."""
     import resource
+    import sys
     import threading
 
     from rasva.engines.builtin.mixer import MixerEngine
@@ -369,7 +370,8 @@ def test_block_mixer_memory_on_a_long_chapter(tmp_path):
     before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     result = engine.run("audio.assemble", inputs,
                         RunContext("j", out, lambda f, d: None, threading.Event()))  # fmt: skip
-    grew_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before
+    grew = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before
+    grew_kb = grew / 1024 if sys.platform == "darwin" else grew  # macOS reports bytes, Linux KiB
     assert result.metrics["audio_s"] > 15 * 60
     full_mix_kb = 15 * 60 * 48_000 * 2 * 4 / 1024  # a whole float32 stereo mix in RAM
     assert grew_kb < full_mix_kb / 3

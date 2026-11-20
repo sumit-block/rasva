@@ -1,9 +1,34 @@
 # Chatterbox Multilingual (phase A3 candidate: voice cloning)
 
-Status: **draft adapter, not yet run.** Adapter, hash-pinned lockfile, tests
-with a fake runtime and UI support are done. Model files are **not pinned yet**,
-so Chatterbox shows on the Models page but cannot be installed. Nothing here has
-been measured on the M2.
+Status: installed and narrating on the target M2, on CPU, with the built-in
+voice and with a cloned voice. Three fixes were needed on the first run (see
+"Decisions"). Quality has not been reviewed by ear yet.
+
+## Measurements on the M2 (2026-11-20)
+
+The Mac is an M2 with 16 GB of memory, running chatterbox-tts 0.1.7 on PyTorch
+CPU, with the model files pinned at `5bb1f6e`. The runs used the built-in voice
+and the Natural preset (the defaults), through the API after the reinstall.
+**Scope is English only for now (owner decision, 2026-11-20).** The
+`audio-v1` run was stopped after its English cases: 30 Devanagari cases were
+cancelled, and 5 Hindi cases that had already finished are not counted here.
+Devanagari will be measured later.
+
+| Measure | Result | How it was measured |
+| --- | --- | --- |
+| Runs | 10 English `audio-v1` cases and 10 English sentences with Mahabharata names: 20 completed, 0 failed | The names sentences were a separate custom experiment, compared against Kokoro `af_heart` |
+| Model load (cold) | 19.5 s and 28.1 s | Two cold starts of the worker. Each includes starting the worker and loading three sub-models on CPU |
+| Real-time factor | median 6.71 on the `audio-v1` English cases (range 6.17 to 7.33); median 6.70 on the names sentences | Generation time ÷ audio length, so this is about 7× **slower** than real time. Kokoro's is 0.20. The 15 Roman Hinglish cases (out of scope) also ran, at a median of 6.73 |
+| Peak memory | 5.49 GB (5,490,393,088 bytes) | The engine worker's lifetime high-water mark (`ru_maxrss`) on CPU, excluding the Rasva server process |
+| Installed size | 4.25 GB (4,247,867,392 bytes) | Disk blocks measured by the installer: model files 3.21 GB, plus the Python 3.11 environment |
+| Network use | none | A load-and-generate run with every socket blocked made 0 attempts (after the segmenter fix below) |
+| Cloned voice | runs: 10.8 s of English audio from a consented 11.6 s recording, real-time factor 6.53, marked `cloned` and `synthetic`, PerTh watermark | The recording passed the quality check except for one "a bit quiet" warning. Similarity has not been judged by ear yet |
+
+What to listen for: some clips are much longer than their text needs. For
+example, "She whispered, 'I'll be back before midnight.'" came out as 9.2 s, and
+the same two Hindi sentences ranged from 8.6 s to 17.4 s over six runs. The
+engine log shows Chatterbox forcing an early stop on detected repetition or
+long tails. These clips may have trailing noise or babble.
 
 ## Enable it
 
@@ -31,10 +56,12 @@ been measured on the M2.
 | No speed control | Chatterbox has none; the speed slider is hidden. Pacing comes from the presets (`cfg_weight`). |
 | Presets Steady / Natural / Expressive | Map to `exaggeration`, `cfg_weight`, `temperature`. Values are the upstream defaults and suggestions, not tuned for Hindi yet. |
 
-## What is not known yet (check on the Mac)
+## What is not known yet
 
-- Hindi quality, cloned-voice similarity, speed, peak memory (estimated 5 GB) and
-  installed size (estimated 2.2 GB plus weights).
+- Devanagari: measurements and quality (deferred by the owner, 2026-11-20).
+- Listening review: English quality, the long-clip problem above,
+  how Mahabharata names are pronounced, and cloned-voice similarity.
+- Whether the presets need tuning for this voice and for Hindi.
 
 ## Watermark and licences
 

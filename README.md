@@ -41,7 +41,7 @@ backend/rasva/
   jobs/                state machine, durable repository, orchestrator, event bus
   engines/             adapter contract, registry, worker subprocess, built-in engines
   engines/kokoro/      Kokoro adapter, pinned model manifest, macOS arm64 lockfile
-  engines/chatterbox/  Chatterbox draft adapter and lockfile (model files not pinned)
+  engines/chatterbox/  Chatterbox adapter, pinned model manifest and lockfile
   engines/indicf5/     IndicF5 draft adapter (manifest, layout and lockfile made on the Mac)
   audio/               script detection, sentence segmentation, pronunciation rules (Hindi-aware)
   experiments/         experiment service, PRD §20 scoring, benchmark sets (audio-v1)
@@ -181,5 +181,5 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Transcript | Done: entered and confirmed by you; plausibility check against the speech length (no speech recognition yet) |
 | Reusable profiles, deletion | Done: deleting a voice deletes its recording immediately; refused while jobs use it |
 | Engine plumbing | Done: engines declaring `voice_cloning` receive the reference path, transcript and language for narration, chapters and previews |
-| Cloning engine | Draft: Chatterbox Multilingual adapter, hash-pinned lockfile, built-in and own voices, PerTh watermark. **Not run; model files not pinned** ([notes](docs/engines/chatterbox.md)) |
-| Listening tests | Need Chatterbox installed on the M2 |
+| Cloning engine | Chatterbox Multilingual runs on the M2 (CPU) with its built-in voice and with your own voice, PerTh watermark. English measured on 2026-11-20: cold load 19.5–28.1 s, median real-time factor 6.7 (about 7× slower than real time), peak worker memory 5.49 GB, installed 4.25 GB. Devanagari deferred ([notes](docs/engines/chatterbox.md)) |
+| Listening tests | Ready for review: English `audio-v1`, English sentences with Mahabharata names (Chatterbox and Kokoro) and one cloned narration |

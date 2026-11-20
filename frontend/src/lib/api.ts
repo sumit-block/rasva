@@ -114,6 +114,8 @@ export interface EngineInfo {
   installed_bytes: number;
   install_state: "built_in" | "not_installed" | "installing" | "installed" | "failed" | "removing";
   install_error: string | null;
+  /** The engine's software list changed since install; model files are unaffected. */
+  software_update_available: boolean;
   needs_license_confirmation: boolean;
   active_job: Job | null;
   compatibility: { compatible: boolean; reasons: string[] };
@@ -207,6 +209,7 @@ export const api = {
   models: () => request<EngineInfo[]>("/models"),
   installModel: (id: string, acceptLicense = false) =>
     request<Job>(`/models/${id}/install`, { method: "POST", body: json({ accept_license: acceptLicense }) }),
+  updateModel: (id: string) => request<Job>(`/models/${id}/update`, { method: "POST" }),
   removeModel: (id: string) => request<Job>(`/models/${id}`, { method: "DELETE" }),
   settings: () => request<AppSettings>("/settings"),
   updateSettings: (body: Partial<AppSettings>) =>

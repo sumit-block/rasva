@@ -130,10 +130,25 @@ export type AppSettings = {
   "onboarding.completed": boolean;
   "onboarding.step": number;
   "lan.enabled": boolean;
+  "memory.safety_margin_bytes": number;
 };
 
+export interface MemoryWait {
+  job_id: string;
+  engine_id: string;
+  needed_bytes: number;
+  available_bytes: number;
+}
+
 export interface Status {
-  orchestrator: { current_job: string | null; resident_engine: string | null };
+  orchestrator: {
+    current_job: string | null;
+    resident_engine: string | null;
+    resident_engine_loaded: boolean;
+    memory_wait: MemoryWait | null;
+  };
+  /** psutil's view: available = free + inactive memory on macOS. */
+  memory: { total_bytes: number; available_bytes: number; level: "ok" | "tight" | "low" };
   storage: Pick<Storage, "used_bytes" | "budget_bytes" | "remaining_bytes" | "level">;
   settings: AppSettings;
 }

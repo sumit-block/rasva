@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import AsyncIterator
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+from rasva.api.deps import DB, State
+from rasva.api.errors import ApiError
+from rasva.engines.contract import EngineError
+from rasva.engines.registry import load_class
+from rasva.jobs import repository as repo
+from rasva.jobs.states import JobState
+from rasva.services import projects as project_svc
+
+router = APIRouter(tags=["jobs"])
+
+HEARTBEAT_S = 15.0
+RETRYABLE = {JobState.FAILED, JobState.CANCELED, JobState.INTERRUPTED}
+
+
+class JobCreate(BaseModel):
+    project_id: str
+    task: str = Field(min_length=1, max_length=100)
+    engine_id: str | None = None
+    inputs: dict[str, Any] = {}
+
+
+def _validate(state: State, engine_id: str, task: str, inputs: dict[str, Any]) -> dict[str, Any]:
+    engine = state.registry.get(engine_id)
+    if engine is None:
+        raise ApiError(422, "engine_unavailable", "That engine is not available.")
+    if task not in engine.descriptor.tasks:
+        raise ApiError(
+            422, "unsupported_task", f"{engine.descriptor.display_name} cannot do this task."
+        )
+    try:
+        # validate_input is required to be pure and lightweight (see contract).
+        return load_class(engine.import_path)().validate_input(task, inputs)
+    except EngineError as exc:
+        raise ApiError(422, exc.code, exc.user_message) from exc
+
+
+@router.post("/jobs", status_code=201)
+def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
+    project_svc.get(conn, body.project_id)
+    engine_id = body.engine_id
+    if engine_id is None:
+        candidates = state.registry.for_task(body.task)
+        if not candidates:
+            raise ApiError(422, "no_engine", "No installed engine can do this yet.")
+        engine_id = candidates[0].descriptor.id
+    inputs = _validate(state, engine_id, body.task, body.inputs)
+    job = repo.create(
+        conn, project_id=body.project_id, task=body.task, engine_id=engine_id, inputs=inputs
+    )
+    state.bus.publish({"type": "job", "job": job})
+    state.orchestrator.notify()
+    return job
+
+
+@router.get("/jobs")
+def list_jobs(
+    conn: DB,
+    project_id: str | None = None,
+    state: Annotated[list[JobState] | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> list[dict[str, Any]]:
+    return repo.list_jobs(
+        conn, project_id=project_id, states=[s.value for s in state] if state else None, limit=limit
+    )
+
+
+@router.get("/jobs/stream")
+async def stream(request: Request, state: State) -> StreamingResponse:
+    """Server-Sent Events: one `job` event per state/progress change."""
+    queue = state.bus.subscribe()
+
+    async def gen() -> AsyncIterator[str]:
+        try:
+            yield "retry: 3000\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), HEARTBEAT_S)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                if event is None:
+                    break
+                yield f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+        finally:
+            state.bus.unsubscribe(queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/jobs/{job_id}")
+def get_job(job_id: str, conn: DB) -> dict[str, Any]:
+    job = repo.get(conn, job_id)
+    job["events"] = repo.events(conn, job_id)
+    return job
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
+    job = repo.request_cancel(conn, job_id)
+    state.orchestrator.cancel(job_id)
+    state.bus.publish({"type": "job", "job": job})
+    return job
+
+
+@router.post("/jobs/{job_id}/retry", status_code=201)
+def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
+    old = repo.get(conn, job_id)
+    if JobState(old["state"]) not in RETRYABLE:
+        raise ApiError(
+            409, "not_retryable", "Only failed, canceled or interrupted jobs can be retried."
+        )
+    inputs = _validate(state, old["engine_id"], old["task"], old["inputs"])
+    job = repo.create(
+        conn,
+        project_id=old["project_id"],
+        task=old["task"],
+        engine_id=old["engine_id"],
+        inputs=inputs,
+        retry_of=job_id,
+    )
+    state.bus.publish({"type": "job", "job": job})
+    state.orchestrator.notify()
+    return job

@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+/*
+ * Rasva design tokens (PRD §5.2): dark charcoal surfaces, restrained lavender
+ * accent, occasional warm coral highlight. Fonts are system fonts only; nothing
+ * is fetched from a CDN. Components use semantic utilities (bg-surface,
+ * text-muted, ...) so both themes stay consistent.
+ */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root,
+[data-theme="dark"] {
+  --bg: oklch(0.17 0.008 285);
+  --surface: oklch(0.21 0.009 285);
+  --surface-2: oklch(0.25 0.011 285);
+  --border: oklch(0.32 0.012 285);
+  --fg: oklch(0.96 0.005 285);
+  --muted: oklch(0.74 0.012 285);
+  --accent: oklch(0.78 0.11 295);
+  --accent-strong: oklch(0.7 0.14 295);
+  --accent-fg: oklch(0.18 0.03 295);
+  --highlight: oklch(0.75 0.13 35);
+  --success: oklch(0.76 0.13 155);
+  --warning: oklch(0.82 0.13 80);
+  --danger: oklch(0.7 0.17 25);
+  --ring: oklch(0.82 0.12 295);
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: oklch(0.985 0.003 285);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.955 0.006 285);
+  --border: oklch(0.88 0.008 285);
+  --fg: oklch(0.2 0.01 285);
+  --muted: oklch(0.45 0.015 285);
+  --accent: oklch(0.52 0.16 295);
+  --accent-strong: oklch(0.45 0.17 295);
+  --accent-fg: oklch(0.99 0.005 295);
+  --highlight: oklch(0.6 0.16 35);
+  --success: oklch(0.5 0.13 155);
+  --warning: oklch(0.55 0.13 70);
+  --danger: oklch(0.53 0.19 25);
+  --ring: oklch(0.52 0.16 295);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-fg: var(--accent-fg);
+  --color-highlight: var(--highlight);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-ring: var(--ring);
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Devanagari",
+    "Kohinoor Devanagari", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-card: 0.875rem;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

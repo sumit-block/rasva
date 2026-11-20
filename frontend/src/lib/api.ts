@@ -62,6 +62,18 @@ export interface Asset {
   original_name: string;
   size_bytes: number;
   created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** Roles a reference photo can play in an image edit (PRD §16). */
+export type PhotoRole = "person" | "garment" | "pose" | "background";
+export const PHOTO_ROLES: PhotoRole[] = ["person", "garment", "pose", "background"];
+export const MAX_REFERENCES = 4;
+
+/** One reference in an `image.edit` job's inputs; the server resolves it to a file. */
+export interface ReferenceInput {
+  asset_id: string;
+  role?: PhotoRole;
 }
 
 export interface Check {
@@ -463,12 +475,16 @@ export const chapters = {
 export const projectAssets = (projectId: string, kind?: "reference" | "import" | "output") =>
   request<Asset[]>(`/projects/${projectId}/assets${kind ? `?kind=${kind}` : ""}`);
 
-export async function uploadAsset(projectId: string, file: File, kind: "reference" | "import"): Promise<Asset> {
+export async function uploadAsset(projectId: string, file: File, kind: "reference" | "import", role?: PhotoRole): Promise<Asset> {
   const form = new FormData();
   form.append("file", file);
   form.append("kind", kind);
+  if (role) form.append("role", role);
   return request<Asset>(`/projects/${projectId}/assets`, { method: "POST", body: form });
 }
+
+export const setPhotoRole = (assetId: string, role: PhotoRole) =>
+  request<Asset>(`/assets/${assetId}`, { method: "PATCH", body: json({ role }) });
 
 export interface LanStatus {
   enabled: boolean;

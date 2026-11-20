@@ -218,7 +218,7 @@ model was run for this work.
 | Item | Status |
 | --- | --- |
 | Small image baseline works on M2 | Done (I0, SD 1.5, measured 2026-11-20). Quality review by eye still open |
-| Authorized person reference uploads work | Uploads with a role (person, garment, pose, background) are built (I1 base). No editing engine runs yet (FLUX.2 Klein 4B in progress). Owner decision: no consent check for person photos |
+| Authorized person reference uploads work | Partly: uploads with a role (person, garment, pose, background) work (I1 base). Rasva does **not** record authorisation or consent for person photos (owner decision, ADR-0007). No editing engine runs yet (FLUX.2 Klein 4B in progress) |
 | Multi-reference role assignment works | Up to 4 photos with roles per edit job (I1 base), tested with a fake engine. Versions group edits by photo and role |
 | Same-person pose change tested | Not done (I2) |
 | Clothing change workflow tested | Not done (I3) |
@@ -226,4 +226,4 @@ model was run for this work.
 | Identity, body, clothing and artifact benchmarks completed | Not done |
 | Selected models fit tested memory and storage limits | SD 1.5 only (8.5 GB GPU reserved, 2.75 GB installed). I1–I3 models not measured |
 | LAN clients can submit and monitor | Done in automated tests. Not yet tried from a real phone |
-| Licensing, consent, safety and usability gates pass | Not done. SD 1.5 runs without a safety checker (ADR-0006). Exports keep the AI-generated label by default, but it can be turned off |
+| Licensing, consent, safety and usability gates pass | Not met. Consent and safety are not met by design, pending owner review: no content filter on SD 1.5 (ADR-0006) or FLUX.2 Klein, and no consent check for person photos (ADR-0007). Exports keep the AI-generated label by default, but it can be turned off. Licensing and usability reviews are not done. The real-model, real-photo and human-review items (§29.4 evaluation set, §29.5 targets) are not done |

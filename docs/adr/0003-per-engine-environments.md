@@ -26,11 +26,55 @@ all environments.
 - Environment size is counted under the `environments` storage category and is
   part of the engine's install preflight.
 
+## Amendment (2026-11-20): software updates for installed engines
+
+Context: Chatterbox's lockfile gained `setuptools<81` to fix a load failure,
+but an installed engine never learned about it. The only way to apply it was
+Remove + Install, which re-downloaded 3.2 GB of unchanged model files, and
+nothing noticed at run time that the environment was outdated.
+
+Decision:
+
+- An engine whose environment marker (`.rasva-lock-sha256`) does not match the
+  SHA-256 of its current lockfile is reported by `GET /api/v1/models` as
+  `software_update_available: true`. Models shows "Software update available"
+  with an Update button.
+- `POST /api/v1/models/{id}/update` queues a `model.update` job on the same
+  single-heavy-job queue as install and remove (same progress, cancel and
+  retry). It is refused while the engine has any other open job, and is
+  preflighted for space: the new environment is built beside the old one.
+- The job rebuilds only the environment, with the same `uv` command line as
+  install (`--require-hashes --only-binary :all: --no-config`), into
+  `envs/.<id>.partial`. It then moves the old environment to
+  `envs/.<id>.previous`, moves the new one into place, re-runs the engine's
+  `verify`, and only then deletes the old one and records the new
+  `installed_bytes`. A failed build, a failed check or a cancel puts the old
+  environment back, so the engine keeps working. The install record stays
+  `installed` throughout. A resident worker for that engine is stopped first.
+  After a crash mid-swap, start-up restores `.previous` if the environment is
+  missing and deletes it otherwise.
+- Model files are never downloaded, moved or deleted by an update.
+- **Jobs on an outdated engine still run.** We chose this over blocking them.
+  An outdated environment is usually still working (the lockfile may change
+  for an unrelated engine-wide fix). The update also needs the internet, and
+  Rasva is local-first: blocking would make an engine unusable offline until
+  the user could update. Running is not silent: the orchestrator logs a
+  warning when it starts a worker on an outdated environment. If that engine
+  then fails to load, the job's error adds "A software update is available
+  for this engine. Open Models and choose Update, then retry."
+
+Limit: an engine's `verify` may check only its model files (Chatterbox's
+does), so it does not prove the new environment imports. A lockfile that
+installs cleanly but cannot load is caught at the next job's load, not by the
+update itself.
+
 ## Consequences
 
 - An upgrade to one engine cannot break another.
 - Disk cost grows with each separate environment. To mitigate it, `uv`'s
   hard-linked cache inside the managed root avoids storing identical wheels
   twice.
+- Changing a lockfile is now a supported update path; it costs one environment
+  rebuild (packages, not model files) per affected install.
 - Follow-up: split `rasva.engines.contract` into a minimal installable SDK so
   engine environments do not need the whole backend on `PYTHONPATH`.

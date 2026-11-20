@@ -106,7 +106,7 @@ engine package. Generate it with
 | P0-010 quota accounting | Done: 80% warn, 90% download block, hard cap, separate macOS reserve |
 | P0-011 guided onboarding | Done: 7-step first-run setup (Mac check, storage limit, starter engine with size/licence, first preview, phone-access note), resumable and skippable |
 | P0-012 engine capability registry | Done |
-| P0-013 model installer | Done: queued install/remove jobs, https-only, SHA-256 + size verified, resumable (Range), licence gating, storage preflight, isolated engine environments from hash-pinned lockfiles |
+| P0-013 model installer | Done: queued install/remove jobs, https-only, SHA-256 + size verified, resumable (Range), licence gating, storage preflight, isolated engine environments from hash-pinned lockfiles; "Software update available" rebuilds only the environment when a lockfile changes, keeping model files and rolling back on failure (ADR-0003) |
 | P0-014 logging | Done: JSON logs, rotating, no request bodies; engine stderr logged per engine |
 | P0-015 responsive components | Done for current pages |
 

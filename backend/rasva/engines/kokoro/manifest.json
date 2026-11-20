@@ -1,0 +1,71 @@
+{
+  "repo": "hexgrad/Kokoro-82M",
+  "revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+  "files": [
+    {
+      "path": "config.json",
+      "sha256": "5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f",
+      "size_bytes": 2351
+    },
+    {
+      "path": "kokoro-v1_0.pth",
+      "sha256": "496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4",
+      "size_bytes": 327212226
+    },
+    {
+      "path": "voices/af_heart.pt",
+      "sha256": "0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff",
+      "size_bytes": 523425
+    },
+    {
+      "path": "voices/af_bella.pt",
+      "sha256": "8cb64e02fcc8de0327a8e13817e49c76c945ecf0052ceac97d3081480e8e48d6",
+      "size_bytes": 523425
+    },
+    {
+      "path": "voices/af_nicole.pt",
+      "sha256": "c5561808bcf5250fe8c5f5de32caf2d94f27e57e95befdb098c5c85991d4c5da",
+      "size_bytes": 523430
+    },
+    {
+      "path": "voices/am_michael.pt",
+      "sha256": "9a443b79a4b22489a5b0ab7c651a0bcd1a30bef675c28333f06971abbd47bd37",
+      "size_bytes": 523435
+    },
+    {
+      "path": "voices/am_adam.pt",
+      "sha256": "ced7e284aba12472891be1da3ab34db84cc05cc02b5889535796dbf2d8b0cb34",
+      "size_bytes": 523420
+    },
+    {
+      "path": "voices/bf_emma.pt",
+      "sha256": "d0a423deabf4a52b4f49318c51742c54e21bb89bbbe9a12141e7758ddb5da701",
+      "size_bytes": 523420
+    },
+    {
+      "path": "voices/bm_george.pt",
+      "sha256": "f1bc812213dc59774769e5c80004b13eeb79bd78130b11b2d7f934542dab811b",
+      "size_bytes": 523430
+    },
+    {
+      "path": "voices/hf_alpha.pt",
+      "sha256": "06906fe05746d13a79c5c01e21fd7233b05027221a933c9ada650f5aafc8f044",
+      "size_bytes": 523425
+    },
+    {
+      "path": "voices/hf_beta.pt",
+      "sha256": "63c0a1a6272e98d43f4511bba40e30dd9c8ceaf5f39af869509b9f51a71c503e",
+      "size_bytes": 523420
+    },
+    {
+      "path": "voices/hm_omega.pt",
+      "sha256": "b55f02a8e8483fffe0afa566e7d22ed8013acf47ad4f6bbee2795a840155703e",
+      "size_bytes": 523425
+    },
+    {
+      "path": "voices/hm_psi.pt",
+      "sha256": "2f0f055cea4f1083f4ef127ece48d71606347f6557dbb961c0ca5740a2da485b",
+      "size_bytes": 523351
+    }
+  ]
+}

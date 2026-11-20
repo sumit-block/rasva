@@ -3,6 +3,7 @@
 
     python3 scripts/pin_engine.py chatterbox
     python3 scripts/pin_engine.py sd15
+    python3 scripts/pin_engine.py flux2klein
     python3 scripts/pin_engine.py indicf5 [--reviewed-code]
     python3 scripts/pin_engine.py kokoro            (same as scripts/pin_kokoro.py)
 
@@ -86,6 +87,29 @@ SPECS = {
                 "tokenizer/tokenizer_config.json", "tokenizer/vocab.json",
                 "unet/config.json", "unet/diffusion_pytorch_model.fp16.safetensors",
                 "vae/config.json", "vae/diffusion_pytorch_model.fp16.safetensors",
+            ],
+        }],
+    },
+    "flux2klein": {
+        "engine": "flux2-klein-4b",
+        "dir": "flux2klein",
+        "sources": [{
+            # Official bf16 files in the diffusers layout that mflux reads. The
+            # 7.75 GB single-file duplicate at the repo root and the sample images
+            # are left out. Quantised to 4-bit on the Mac at install (ADR-0007).
+            "repo": "black-forest-labs/FLUX.2-klein-4B", "subdir": "",
+            "files": [
+                "LICENSE.md", "model_index.json", "scheduler/scheduler_config.json",
+                "transformer/config.json", "transformer/diffusion_pytorch_model.safetensors",
+                "text_encoder/config.json", "text_encoder/generation_config.json",
+                "text_encoder/model.safetensors.index.json",
+                "text_encoder/model-00001-of-00002.safetensors",
+                "text_encoder/model-00002-of-00002.safetensors",
+                "tokenizer/added_tokens.json", "tokenizer/chat_template.jinja",
+                "tokenizer/merges.txt", "tokenizer/special_tokens_map.json",
+                "tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json",
+                "tokenizer/vocab.json",
+                "vae/config.json", "vae/diffusion_pytorch_model.safetensors",
             ],
         }],
     },

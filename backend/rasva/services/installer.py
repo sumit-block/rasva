@@ -732,7 +732,9 @@ class Installer:
     async def update(self, engine: RegisteredEngine, hooks: Hooks) -> dict[str, Any]:
         """Rebuild only the engine's environment from its current lockfile.
 
-        Model files are never downloaded, moved or deleted. The install record
+        Model files are never downloaded, moved or deleted, and the one-time
+        ``prepare`` step is not re-run (its output does not depend on the env;
+        a change to the prepared format would need a re-prepare). The install record
         stays ``installed`` throughout: on failure or cancel the previous
         environment is put back and keeps working.
         """

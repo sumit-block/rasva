@@ -64,6 +64,12 @@ Decision:
   ready), the job's error adds "A software update is available
   for this engine. Open Models and choose Update, then retry."
 
+- An update does not re-run the engine's one-time `prepare` step (for example
+  FLUX.2 Klein's 4-bit quantisation into `<model_dir>/q4`): prepared files are
+  model data and do not depend on the environment. If a future library change
+  alters the prepared format, that engine will need a re-prepare, which this
+  update action does not provide.
+
 Limit: an engine's `verify` may check only its model files (Chatterbox's
 does), so it does not prove the new environment imports. A lockfile that
 installs cleanly but cannot load is caught at the next job's load, not by the

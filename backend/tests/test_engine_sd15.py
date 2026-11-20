@@ -41,6 +41,7 @@ class FakeRuntime:
         self.seeds: list[int] = []
         self.moved_to: list[str] = []
         self.saved: list[tuple[tuple, str]] = []
+        self.sliced = False
         self.image = np.full((512, 512, 3), 0.5, dtype=np.float32) if image is None else image
 
         torch = types.ModuleType("torch")
@@ -76,7 +77,7 @@ class FakeRuntime:
                 return self
 
             def enable_attention_slicing(self):
-                rt.sliced = True
+                rt.sliced = True  # fp16 + slicing on MPS gives NaN images: must not be called
 
             def __call__(self, prompt, **kw):
                 rt.calls.append({"prompt": prompt, **kw})
@@ -253,7 +254,7 @@ def test_loads_local_fp16_files_on_mps_without_safety_checker(fake, tmp_path):
     assert kw["local_files_only"] is True and kw["use_safetensors"] is True
     assert kw["variant"] == "fp16" and kw["torch_dtype"] == "torch.float16"
     assert kw["safety_checker"] is None and kw["requires_safety_checker"] is False
-    assert rt.moved_to == ["mps"] and rt.sliced
+    assert rt.moved_to == ["mps"] and not rt.sliced
     assert engine.device == "mps" and engine.dtype == "float16"
     assert engine._pipe.scheduler == "dpm++2m"
 

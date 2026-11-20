@@ -181,9 +181,10 @@ class StableDiffusion15Engine(Engine):
             # DPM++ 2M: good results in 20-30 steps (the default PNDM wants ~50).
             pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
             pipe.set_progress_bar_config(disable=True)
+            # No attention slicing: on the M2 (torch 2.11, fp16 on MPS) it turned every
+            # latent into NaN, so each image came out blank. PyTorch's built-in attention
+            # is already memory-efficient.
             pipe = pipe.to(device)
-            if device == "mps":
-                pipe.enable_attention_slicing()  # lower peak memory on 16 GB Macs
             return pipe, str(dtype).removeprefix("torch.")
 
         try:

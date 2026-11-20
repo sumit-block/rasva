@@ -553,7 +553,8 @@ function ImageGrid({ exp, cases, onScore }: { exp: Experiment; cases: [string, E
         </thead>
         <tbody className="divide-y divide-border">
           {cases.map(([caseId, runs]) => {
-            const first = runs[0];
+            // A skipped custom run has no job, so no text or seed: use one that has them.
+            const first = runs.find((r) => r.text) ?? runs[0];
             return (
               <tr key={caseId}>
                 <th scope="row" className="sticky left-0 w-48 min-w-48 bg-surface p-2 text-left align-top font-normal">

@@ -62,7 +62,8 @@ def recommend(
     categories = LANGUAGE_CATEGORIES.get(language, set())
 
     best: dict[str, Any] | None = None
-    for exp in experiments.list_experiments(conn)[:RECENT_EXPERIMENTS]:
+    narration = [e for e in experiments.list_experiments(conn) if e["task"] == "audio.narrate"]
+    for exp in narration[:RECENT_EXPERIMENTS]:
         detail = experiments.get(conn, registry, exp["id"], total_memory)
         eligible = {s["key"]: s["eligible"] for s in detail["summary"]}
         settings = {c["key"]: c for c in detail["candidates"]}

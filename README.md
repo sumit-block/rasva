@@ -42,6 +42,8 @@ backend/rasva/
   jobs/                state machine, durable repository, orchestrator, event bus
   engines/             adapter contract, registry, worker subprocess, built-in engines
   engines/kokoro/      Kokoro adapter, pinned model manifest, macOS arm64 lockfile
+  engines/chatterbox/  Chatterbox draft adapter and lockfile (model files not pinned)
+  engines/indicf5/     IndicF5 draft adapter (manifest, layout and lockfile made on the Mac)
   audio/               script detection, sentence segmentation, pronunciation rules (Hindi-aware)
   experiments/         experiment service, PRD §20 scoring, benchmark sets (audio-v1)
   services/            storage quota/preflight, assets, projects, system check, settings
@@ -49,6 +51,8 @@ frontend/src/          React + TS + Vite + Tailwind v4, shadcn-style components,
 docs/adr/              architecture decision records
 docs/engines/          per-engine decisions, limitations and licences
 scripts/pin_kokoro.py  pins Kokoro's model files (commit + SHA-256) into its manifest
+scripts/pin_engine.py  same for Chatterbox and IndicF5 (several repositories per engine)
+scripts/lock_engine.sh builds a hash-pinned lockfile for an engine installed from GitHub (IndicF5)
 ```
 
 ## Architecture in one paragraph
@@ -134,7 +138,8 @@ engine package. Generate it with
 | A2-002 language detection | Done: per sentence (Hindi, Roman Hinglish, English, mixed, unclear) with confidence |
 | A2-003 mixed-language segmentation | Done: Devanagari/Latin spans with exact offsets |
 | A2-004 transliteration suggestions | Done: confident for names and common words, rule-based guesses marked; nothing applied without review |
-| A2-001 Indic engine · A2-007/008 comparison and benchmark | Need an Indic engine candidate pinned and tested on the M2 |
+| A2-001 Indic engine | Draft: IndicF5 adapter (no remote code, local files, Devanagari only, own voice). **Not run; manifest, file layout and lockfile must be made on the Mac** ([notes](docs/engines/indicf5.md)) |
+| A2-007/008 comparison and benchmark | Need IndicF5 (or another Indic engine) installed and run on the M2 |
 
 ## A4 status: long-form narration and mixing
 
@@ -177,4 +182,5 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Transcript | Done: entered and confirmed by you; plausibility check against the speech length (no speech recognition yet) |
 | Reusable profiles, deletion | Done: deleting a voice deletes its recording immediately; refused while jobs use it |
 | Engine plumbing | Done: engines declaring `voice_cloning` receive the reference path, transcript and language for narration, chapters and previews |
-| Cloning engine and listening tests | Need a candidate (e.g. Chatterbox) pinned and tested on the M2 |
+| Cloning engine | Draft: Chatterbox Multilingual adapter, hash-pinned lockfile, built-in and own voices, PerTh watermark. **Not run; model files not pinned** ([notes](docs/engines/chatterbox.md)) |
+| Listening tests | Need Chatterbox installed on the M2 |

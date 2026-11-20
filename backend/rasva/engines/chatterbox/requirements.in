@@ -1,0 +1,7 @@
+# Inputs for the Chatterbox Multilingual engine environment (ADR-0003). Regenerate with:
+#   uv pip compile requirements.in --generate-hashes --only-binary :all: \
+#     --python-version 3.11 --python-platform aarch64-apple-darwin \
+#     --no-header --no-annotate -o requirements.lock
+chatterbox-tts==0.1.7
+# Needed by the Rasva worker protocol (rasva.engines.contract).
+pydantic>=2.7,<3

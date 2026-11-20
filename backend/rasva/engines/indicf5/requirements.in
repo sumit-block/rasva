@@ -1,0 +1,9 @@
+# Inputs for the IndicF5 engine environment (ADR-0003). Its code is only on GitHub,
+# so the lockfile is generated on the Mac:  scripts/lock_engine.sh indicf5 <commit>
+# The commit below is replaced by the script with the one you pin.
+f5-tts @ git+https://github.com/AI4Bharat/IndicF5@COMMIT
+# IndicF5's own pins (requirements.txt in its repository).
+transformers<4.50
+numpy<=1.26.4
+# Needed by the Rasva worker protocol (rasva.engines.contract).
+pydantic>=2.7,<3

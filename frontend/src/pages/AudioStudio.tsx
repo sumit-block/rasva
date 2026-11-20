@@ -40,11 +40,14 @@ function VoicePicker({ voices, value, onChange, profiles, profileId, onProfile }
 }) {
   const languages = [...new Set(voices.map((v) => v.language))];
   const current = voices.find((v) => v.id === value);
-  const [lang, setLang] = useState<Voice["language"] | "mine">(profileId ? "mine" : current?.language ?? languages[0] ?? "en");
+  // Engines without built-in voices (e.g. IndicF5) only speak in your own voices.
+  const onlyMine = voices.length === 0 && !!profiles;
+  const [lang, setLang] = useState<Voice["language"] | "mine">(profileId || onlyMine ? "mine" : current?.language ?? languages[0] ?? "en");
   useEffect(() => {
-    if (profileId) setLang("mine");
+    if (profileId || onlyMine) setLang("mine");
     else if (current) setLang(current.language);
-  }, [current, profileId]);
+    else if (lang !== "mine" && !languages.includes(lang) && languages[0]) setLang(languages[0]);
+  }, [current, profileId, onlyMine, languages.join(), lang]);
   return (
     <div>
       <div role="tablist" aria-label="Voice language" className="mb-3 inline-flex rounded-lg border border-border bg-surface-2 p-1">

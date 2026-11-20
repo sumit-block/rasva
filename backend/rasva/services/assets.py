@@ -133,6 +133,7 @@ def store_upload(
     stream: BinaryIO,
     max_bytes: int,
     preflight: Any,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Stream an upload to a temp file, validate, hash, then atomically move it in.
 
@@ -195,7 +196,7 @@ def store_upload(
                 rel,
                 size,
                 digest.hexdigest(),
-                dumps({}),
+                dumps(metadata or {}),
                 1 if kind == "reference" else 0,
                 now,
             ),
@@ -256,4 +257,16 @@ def promote_output(
     except BaseException:
         dest.unlink(missing_ok=True)
         raise
+    return get(conn, asset_id)
+
+
+def set_metadata(conn: sqlite3.Connection, asset_id: str, **fields: Any) -> dict[str, Any]:
+    """Merge fields into an asset's metadata (None removes a key)."""
+    meta = get(conn, asset_id)["metadata"]
+    for key, value in fields.items():
+        if value is None:
+            meta.pop(key, None)
+        else:
+            meta[key] = value
+    conn.execute("UPDATE assets SET metadata = ? WHERE id = ?", (dumps(meta), asset_id))
     return get(conn, asset_id)

@@ -197,3 +197,33 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Measurements (M2, 2026-11-20) | 6 of 6 completed; cold load 14.5 s; median 52.6 s per 512 × 512 image at 25 steps; GPU memory reserved 8.5 GB; installed 2.75 GB ([details](docs/engines/sd15.md)) |
 | Exit-gate checks | Saved outputs are reproducible (same seed gives an identical file); the engine unloads, and Kokoro narrated normally afterwards; no network use; prompts stay out of logs |
 | Still open | Quality review by eye; image experiments (§20.2 weights); a memory guard before image jobs |
+
+## I4 status: image versions, export, cleanup (engine-independent parts)
+
+Built and tested with a fake image engine (`tests/fake_image_editor.py`). No real
+model was run for this work.
+
+| Item | Status |
+| --- | --- |
+| Versions | Done: variations (new seed), "Try again, same seed", edited descriptions, retries and edits of the same reference photos are versions of one image (migration 0009). You can mark a favourite; with none, the newest finished version is current |
+| Before/after | Done: wipe slider (arrow keys, Page Up/Down, Home/End) or side by side. Compares versions, or an edit with its reference photo. Checked at 375 px with the fake engine |
+| Export | Done: PNG as made, with or without generation details; JPEG in the browser with a quality setting ([ADR-0008](docs/adr/0008-image-export-encoding.md)). The description is never written into files |
+| Cleanup | Done: older versions that are not the favourite or the newest are offered after a day (off by default). Reference photos, favourites and images used as sources are never offered. Files of failed image jobs count as temporary |
+| Recovery | Done (tests): an image job interrupted by a restart is marked Interrupted and retries with the same seed into the same image's versions |
+| Low-memory mode | Setting `image.low_memory`, with a toggle in Image Studio. It is passed to engines that list the `low_memory` feature. **No installed engine supports it yet**: SD 1.5 does not opt in (attention slicing blanked images on MPS; CPU offload is unmeasured) |
+| LAN | Done (tests over real TLS): paired devices create, watch (live updates), version, favourite and export images. Cleanup stays on the Mac |
+
+### Image release checklist (PRD §34.2)
+
+| Item | Status |
+| --- | --- |
+| Small image baseline works on M2 | Done (I0, SD 1.5, measured 2026-11-20). Quality review by eye still open |
+| Authorized person reference uploads work | Not done here (I1, in progress) |
+| Multi-reference role assignment works | Not done here (I1). Versions already group edits by reference photo and role |
+| Same-person pose change tested | Not done (I2) |
+| Clothing change workflow tested | Not done (I3) |
+| Before/after, versions and PNG/JPEG exports work | Built and tested with a fake engine. Still to check with a real engine on the M2, and JPEG in Safari on a phone |
+| Identity, body, clothing and artifact benchmarks completed | Not done |
+| Selected models fit tested memory and storage limits | SD 1.5 only (8.5 GB GPU reserved, 2.75 GB installed). I1–I3 models not measured |
+| LAN clients can submit and monitor | Done in automated tests. Not yet tried from a real phone |
+| Licensing, consent, safety and usability gates pass | Not done. SD 1.5 runs without a safety checker (ADR-0006). Exports keep the AI-generated label by default, but it can be turned off |

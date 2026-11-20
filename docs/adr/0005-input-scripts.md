@@ -1,6 +1,8 @@
 # ADR-0005: Narration text is English or Devanagari
 
-Status: accepted (2026-11-20, owner decision)
+- Status: Accepted (owner decision)
+- Date: 2026-11-20
+- PRD refs: language scope (Hindi, English, Hinglish)
 
 ## Context
 

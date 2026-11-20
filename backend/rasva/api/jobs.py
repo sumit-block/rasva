@@ -20,6 +20,7 @@ from rasva.jobs.orchestrator import MODEL_TASKS
 from rasva.jobs.states import JobState
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
+from rasva.services import references as reference_svc
 from rasva.services import voices as voice_svc
 from rasva.services.installer import ModelStore
 from rasva.services.presets import PresetError, apply_preset
@@ -61,6 +62,19 @@ def _validate(
         raise ApiError(422, exc.code, exc.user_message) from exc
 
 
+def _resolve_references(
+    state: State, conn: sqlite3.Connection, project_id: str | None, raw: dict[str, Any]
+) -> dict[str, Any]:
+    if raw.get("references") is None:
+        return raw
+    if project_id is None:
+        raise ApiError(422, "invalid_reference", "Reference photos belong to a project.")
+    try:
+        return reference_svc.resolve_inputs(conn, state.settings.paths, project_id, raw)
+    except reference_svc.PhotoReferenceError as exc:
+        raise ApiError(422, "invalid_reference", str(exc)) from exc
+
+
 @router.post("/jobs", status_code=201)
 def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
     if body.task in MODEL_TASKS:
@@ -94,6 +108,7 @@ def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
             raw = voice_svc.resolve_profile(conn, state.settings.paths, engine.descriptor, raw)
         except voice_svc.VoiceError as exc:
             raise ApiError(422, "invalid_voice", str(exc)) from exc
+    raw = _resolve_references(state, conn, body.project_id, raw)
     if body.task == "audio.narrate" and engine is not None:
         # Approved pronunciations change only what the engine reads (PRD §10.2).
         raw, narration_extras = pronunciation_svc.prepare_narration(
@@ -193,6 +208,8 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
             )  # fmt: skip
         except (voice_svc.VoiceError, AttributeError) as exc:
             raise ApiError(422, "invalid_voice", str(exc)) from exc
+    # Re-resolve reference photos too: they may have been deleted since.
+    raw = _resolve_references(state, conn, old["project_id"], raw)
     inputs = {**_validate(state, conn, old["engine_id"], old["task"], raw), **extras}
     job = repo.create(
         conn,

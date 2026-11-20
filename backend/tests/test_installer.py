@@ -749,3 +749,57 @@ def test_migration_from_v1_preserves_jobs_and_events(tmp_path):
         " VALUES ('m', 'model.install', 'e', 'queued', ?, ?)",
         (now, now),
     )
+
+
+# ----------------------------------------------------------------- prepare step
+
+
+def test_prepare_runs_once_in_its_own_process(isettings, server):
+    from tests.install_engines import Preparing
+
+    c = client_with(isettings, make_engine("Prep", artifacts(server), base=Preparing))
+    try:
+        done = wait_for(c, install(c, "test-prep").json()["id"], TERMINAL)
+        assert done["state"] == "completed", done
+        assert "prepare_s" in done["metrics"]
+        d = model_dir(isettings, "test-prep")
+        assert (d / "prepared.txt").read_text() == BIG[:4].hex()
+        assert (d / "prepare-runs.txt").read_text() == "1"
+        assert not (d / ".prepared.tmp").exists()
+        log = (isettings.paths.logs / "engines" / "test-prep-install.log").read_text()
+        assert "rasva.engines.prepare" in log and "tests.install_engines:Preparing" in log
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_failed_prepare_keeps_downloads_and_reinstall_skips_them(isettings, server):
+    from tests.install_engines import FailingPrepare
+
+    c = client_with(isettings, make_engine("PrepFail", artifacts(server), base=FailingPrepare))
+    try:
+        done = wait_for(c, install(c, "test-prepfail").json()["id"], TERMINAL)
+        assert done["state"] == "failed" and done["error_code"] == "prepare_failed"
+        assert "downloaded files are kept" in done["error_message"]
+        d = model_dir(isettings, "test-prepfail")
+        assert (d / "weights" / "model.bin").read_bytes() == BIG  # not deleted
+        again = wait_for(c, install(c, "test-prepfail").json()["id"], TERMINAL)
+        assert again["error_code"] == "prepare_failed"
+        assert (
+            again["metrics"].get("downloaded_bytes", 0) == 0
+            or "downloaded_bytes" not in again["metrics"]
+        )
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_prepare_cannot_use_the_network(isettings, server):
+    from tests.install_engines import NetworkPrepare
+
+    c = client_with(isettings, make_engine("PrepNet", artifacts(server), base=NetworkPrepare))
+    try:
+        done = wait_for(c, install(c, "test-prepnet").json()["id"], TERMINAL)
+        assert done["state"] == "failed" and done["error_code"] == "prepare_failed"
+        log = (isettings.paths.logs / "engines" / "test-prepnet-install.log").read_text()
+        assert "blocked a network connection while preparing" in log
+    finally:
+        c.__exit__(None, None, None)

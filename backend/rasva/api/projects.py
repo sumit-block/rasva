@@ -10,6 +10,7 @@ from rasva.api.deps import DB, State
 from rasva.api.errors import ApiError
 from rasva.services import assets as asset_svc
 from rasva.services import projects as svc
+from rasva.services import references as reference_svc
 
 router = APIRouter(tags=["projects"])
 
@@ -68,8 +69,13 @@ def upload_asset(
     conn: DB,
     file: Annotated[UploadFile, File()],
     kind: Annotated[Literal["reference", "import"], Form()] = "reference",
+    role: Annotated[str | None, Form()] = None,
 ) -> dict[str, Any]:
     svc.get(conn, project_id)  # 404 if missing
+    try:
+        role = reference_svc.check_upload(conn, project_id, kind, role)
+    except reference_svc.PhotoReferenceError as exc:
+        raise ApiError(422, "invalid_reference", str(exc)) from exc
     asset = asset_svc.store_upload(
         conn,
         state.settings.paths,
@@ -79,6 +85,7 @@ def upload_asset(
         stream=file.file,
         max_bytes=state.settings.max_upload_bytes,
         preflight=lambda n: state.preflight(conn, n, "upload"),
+        metadata={"role": role} if role else None,
     )
     svc.touch(conn, project_id)
     state.storage.invalidate()

@@ -2,6 +2,7 @@ import { ImageIcon, Plus, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { JobRow } from "@/components/JobRow";
+import { OutfitPanel } from "@/components/image/OutfitPanel";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -175,6 +176,14 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
           <ul className="grid gap-3 md:grid-cols-2">{results.map((j) => <JobRow key={j.id} job={j} />)}</ul>
         )}
       </section>
+
+      {/* I3: Change outfit (own component, own results) */}
+      <OutfitPanel projectId={projectId}
+        ensureProject={async () => {
+          const p = await createProject();
+          setParams({ project: p.id });
+          return p.id;
+        }} />
     </>
   );
 }

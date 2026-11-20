@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import ssl
 import sys
 import urllib.parse
@@ -58,6 +59,27 @@ def get_json(url: str) -> object:
         return json.load(resp)
 
 
+def get_tree(url: str) -> list[dict]:
+    """All entries of a repository tree. The API pages long listings (Link: rel="next")."""
+    entries: list[dict] = []
+    while url:
+        req = urllib.request.Request(url, headers={"User-Agent": "rasva-pin/1"})  # noqa: S310
+        with urllib.request.urlopen(req, timeout=60, context=TLS) as resp:  # noqa: S310
+            entries += json.load(resp)
+            url = _next_page(resp.headers.get("Link", ""))
+    return entries
+
+
+def _next_page(link: str) -> str:
+    match = re.search(r'<([^>]+)>;\s*rel="next"', link)
+    if not match:
+        return ""
+    nxt = match.group(1)
+    if not nxt.startswith("https://huggingface.co/"):
+        raise SystemExit(f"Unexpected pagination URL: {nxt}")
+    return nxt
+
+
 def sha256_url(url: str) -> tuple[str, int]:
     digest, size = hashlib.sha256(), 0
     req = urllib.request.Request(url, headers={"User-Agent": "rasva-pin/1"})  # noqa: S310
@@ -77,7 +99,7 @@ def main() -> int:
     print(f"Pinning {REPO} at commit {commit}")
     tree = {
         e["path"]: e
-        for e in get_json(f"{API}/tree/{commit}?recursive=true&expand=true")
+        for e in get_tree(f"{API}/tree/{commit}?recursive=true&expand=true")
         if e.get("type") == "file"
     }
     missing = [f for f in FILES if f not in tree]

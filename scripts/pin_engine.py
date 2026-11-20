@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -85,6 +86,26 @@ def get_json(url: str) -> object:
         return json.load(resp)
 
 
+def get_tree(url: str) -> list[dict]:
+    """All entries of a repository tree. The API pages long listings (Link: rel="next")."""
+    entries: list[dict] = []
+    while url:
+        with urllib.request.urlopen(_get(url), timeout=60, context=TLS) as resp:  # noqa: S310
+            entries += json.load(resp)
+            url = _next_page(resp.headers.get("Link", ""))
+    return entries
+
+
+def _next_page(link: str) -> str:
+    match = re.search(r'<([^>]+)>;\s*rel="next"', link)
+    if not match:
+        return ""
+    nxt = match.group(1)
+    if not nxt.startswith("https://huggingface.co/"):
+        raise SystemExit(f"Unexpected pagination URL: {nxt}")
+    return nxt
+
+
 def sha256_url(url: str) -> tuple[str, int]:
     digest, size = hashlib.sha256(), 0
     with urllib.request.urlopen(_get(url), timeout=300, context=TLS) as resp:  # noqa: S310
@@ -101,7 +122,7 @@ def pin_source(
     commit = get_json(f"{api}/revision/{urllib.parse.quote(revision)}")["sha"]
     tree = {
         e["path"]: e
-        for e in get_json(f"{api}/tree/{commit}?recursive=true&expand=true")
+        for e in get_tree(f"{api}/tree/{commit}?recursive=true&expand=true")
         if e.get("type") == "file"
     }
     paths = sorted(p for p in tree if p not in SKIP) if wanted == "*" else list(wanted)

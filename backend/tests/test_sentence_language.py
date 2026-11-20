@@ -179,3 +179,91 @@ def test_preview_on_an_engine_that_speaks_both(settings):
         r = c.post(f"/api/v1/pronunciations/{e['id']}/preview",
                    json={"engine_id": "test-narrator", "voice_id": "hf_alpha"})  # fmt: skip
         assert r.status_code == 422
+
+
+# ------------------------------------------------------------------ chapter overrides
+
+CHAPTER = "Duryodhana spoke. Then he left.\n\nDhritarashtra waited."
+
+
+def chapter(c, engine="test-bilingual", voice="default_en"):
+    from tests.test_chapters import new_chapter
+
+    entry(c)
+    entry(c, written_forms=["Dhritarashtra"], spoken="Dhri-ta-raash-tra")
+    return new_chapter(c, CHAPTER, engine_id=engine, voice_id=voice)
+
+
+def mark(c, segment_id, language):
+    r = c.patch(f"/api/v1/segments/{segment_id}", json={"language": language})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def narration_inputs(c, seg):
+    return c.get(f"/api/v1/jobs/{seg['takes'][-1]['job_id']}").json()["inputs"]
+
+
+def test_sentence_language_override_in_a_chapter(settings):
+    from tests.test_chapters import generate, settle, statuses
+
+    with client(settings) as c:
+        _, ch = chapter(c)
+        assert ch["language_per_sentence"] is True
+        first, second = ch["segments"]
+        assert first["language_override"] is None and first["reads_as"] == "en"
+        assert (
+            c.patch(f"/api/v1/segments/{first['id']}", json={"language": "xx"}).status_code == 422
+        )
+        assert c.patch("/api/v1/segments/nope", json={"language": "en"}).status_code == 404
+
+        ch = mark(c, first["id"], "hi")
+        assert ch["segments"][0]["language_override"] == "hi"
+        assert ch["segments"][0]["reads_as"] == "hi"
+        generate(c, ch["id"])
+        ch = settle(c, ch["id"])
+        assert statuses(ch) == ["ready", "ready"]
+        marked, plain = (narration_inputs(c, s) for s in ch["segments"])
+        # The marked sentence goes to the engine as Hindi and skips English entries.
+        assert marked["language"] == "hi" and marked["text"] == "Duryodhana spoke. Then he left."
+        assert "language" not in plain and plain["text"] == "Dhri-ta-raash-tra waited."
+        assert plain["original_text"] == "Dhritarashtra waited."
+
+        # Changing a choice makes only that sentence need generating again.
+        ch = mark(c, ch["segments"][1]["id"], "en")
+        assert statuses(ch) == ["ready", "outdated"]
+        ch = mark(c, ch["segments"][1]["id"], None)
+        assert statuses(ch) == ["ready", "ready"]
+
+        # Edits elsewhere keep the choice and the audio.
+        script = CHAPTER.replace("Dhritarashtra waited.", "Dhritarashtra waited long.")
+        ch = c.patch(f"/api/v1/chapters/{ch['id']}", json={"script": script}).json()
+        assert ch["segments"][0]["id"] == first["id"]
+        assert ch["segments"][0]["language_override"] == "hi"
+        assert statuses(ch) == ["ready", "pending"]
+
+        # Editing a neighbouring sentence in the same group keeps the choice too.
+        script = script.replace("Then he left.", "Then he went home.")
+        ch = c.patch(f"/api/v1/chapters/{ch['id']}", json={"script": script}).json()
+        assert ch["segments"][0]["text"] == "Duryodhana spoke. Then he went home."
+        assert ch["segments"][0]["language_override"] == "hi"
+        assert ch["segments"][1]["language_override"] is None
+
+
+def test_one_language_engines_keep_the_choice_without_using_it(settings):
+    from tests.test_chapters import generate, settle, statuses
+
+    with client(settings) as c:
+        _, ch = chapter(c, engine="test-narrator", voice="af_heart")
+        assert ch["language_per_sentence"] is False
+        generate(c, ch["id"])
+        ch = settle(c, ch["id"])
+        ch = mark(c, ch["segments"][0]["id"], "hi")
+        # Saved for later (another engine), but this voice reads everything in
+        # English, so nothing needs generating again.
+        assert ch["segments"][0]["language_override"] == "hi"
+        assert statuses(ch) == ["ready", "ready"]
+        generate(c, ch["id"], scope="all")
+        ch = settle(c, ch["id"])
+        inputs = narration_inputs(c, ch["segments"][0])
+        assert inputs["text"] == "Dur-yo-dhuh-na spoke. Then he left."  # by the voice: English

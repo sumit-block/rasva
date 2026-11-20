@@ -58,6 +58,11 @@ class ChapterUpdate(BaseModel):
     mix: dict[str, Any] | None = None
 
 
+class SegmentUpdate(BaseModel):
+    # The sentence's language when detection is wrong; null = automatic.
+    language: Literal["en", "hi"] | None = None
+
+
 class Generate(BaseModel):
     scope: Literal["needed", "failed", "all"] = "needed"
 
@@ -100,8 +105,8 @@ def _call(fn: Any, *args: Any, **kw: Any) -> Any:
         raise ApiError(404, "chapter_not_found", "That chapter does not exist.") from exc
 
 
-def _detail(conn: DB, chapter_id: str) -> dict[str, Any]:
-    data = _call(svc.detail, conn, chapter_id)
+def _detail(state: State, conn: DB, chapter_id: str) -> dict[str, Any]:
+    data = _call(svc.detail, conn, chapter_id, state.registry)
     data["mp3_available"] = find_ffmpeg() is not None
     data["music_presets"] = list(MUSIC_PRESETS)
     return data
@@ -126,12 +131,12 @@ def create(project_id: str, body: ChapterCreate, state: State, conn: DB) -> dict
         script=body.script, settings=body.settings.model_dump(exclude_none=True),
         paths=state.settings.paths,
     )  # fmt: skip
-    return _detail(conn, chapter_id)
+    return _detail(state, conn, chapter_id)
 
 
 @router.get("/chapters/{chapter_id}")
-def get(chapter_id: str, conn: DB) -> dict[str, Any]:
-    return _detail(conn, chapter_id)
+def get(chapter_id: str, state: State, conn: DB) -> dict[str, Any]:
+    return _detail(state, conn, chapter_id)
 
 
 @router.patch("/chapters/{chapter_id}")
@@ -141,7 +146,7 @@ def update(chapter_id: str, body: ChapterUpdate, state: State, conn: DB) -> dict
         settings=body.settings.model_dump(exclude_none=True) if body.settings else None,
         mix=body.mix, paths=state.settings.paths,
     )  # fmt: skip
-    return _detail(conn, chapter_id)
+    return _detail(state, conn, chapter_id)
 
 
 @router.delete("/chapters/{chapter_id}", status_code=204)
@@ -155,17 +160,17 @@ def generate(chapter_id: str, body: Generate, state: State, conn: DB) -> dict[st
         svc.generate, conn, state.registry, chapter_id, body.scope, state.settings.paths
     )
     _publish(state, conn, job_ids)
-    return _detail(conn, chapter_id)
+    return _detail(state, conn, chapter_id)
 
 
 @router.post("/chapters/{chapter_id}/cancel")
 def cancel(chapter_id: str, state: State, conn: DB) -> dict[str, Any]:
-    _call(svc.detail, conn, chapter_id)  # 404 if missing
+    _call(svc.detail, conn, chapter_id, state.registry)  # 404 if missing
     for job_id in svc.open_job_ids(conn, chapter_id):
         job = repo.request_cancel(conn, job_id)
         state.orchestrator.cancel(job_id)
         state.bus.publish({"type": "job", "job": job})
-    return _detail(conn, chapter_id)
+    return _detail(state, conn, chapter_id)
 
 
 @router.post("/segments/{segment_id}/regenerate")
@@ -175,21 +180,27 @@ def regenerate(segment_id: str, state: State, conn: DB) -> dict[str, Any]:
     chapter_id = conn.execute(
         "SELECT chapter_id FROM segments WHERE id = ?", (segment_id,)
     ).fetchone()["chapter_id"]
-    return _detail(conn, chapter_id)
+    return _detail(state, conn, chapter_id)
+
+
+@router.patch("/segments/{segment_id}")
+def update_segment(segment_id: str, body: SegmentUpdate, state: State, conn: DB) -> dict[str, Any]:
+    chapter_id = _call(svc.set_language, conn, segment_id, body.language)
+    return _detail(state, conn, chapter_id)
 
 
 @router.post("/segments/{segment_id}/takes/{take_id}/use")
-def use_take(segment_id: str, take_id: str, conn: DB) -> dict[str, Any]:
+def use_take(segment_id: str, take_id: str, state: State, conn: DB) -> dict[str, Any]:
     chapter_id = _call(svc.choose_take, conn, segment_id, take_id)
-    return _detail(conn, chapter_id)
+    return _detail(state, conn, chapter_id)
 
 
 # ------------------------------------------------------------------ mix tracks
 
 
 @router.post("/chapters/{chapter_id}/tracks", status_code=201)
-def add_track(chapter_id: str, body: TrackCreate, conn: DB) -> dict[str, Any]:
-    chapter = _call(svc.detail, conn, chapter_id)
+def add_track(chapter_id: str, body: TrackCreate, state: State, conn: DB) -> dict[str, Any]:
+    chapter = _call(svc.detail, conn, chapter_id, state.registry)
     asset = asset_svc.get(conn, body.asset_id)
     if asset["project_id"] != chapter["project_id"] or not asset["media_type"].startswith("audio/"):
         raise ApiError(422, "invalid_asset", "Choose an audio file from this project.")
@@ -211,7 +222,7 @@ def add_track(chapter_id: str, body: TrackCreate, conn: DB) -> dict[str, Any]:
             int(values["loop"]), int(values["duck"]), utcnow(),
         ),
     )  # fmt: skip
-    return _detail(conn, chapter_id)
+    return _detail(state, conn, chapter_id)
 
 
 def _track(conn: DB, track_id: str) -> dict[str, Any]:
@@ -222,7 +233,7 @@ def _track(conn: DB, track_id: str) -> dict[str, Any]:
 
 
 @router.patch("/tracks/{track_id}")
-def update_track(track_id: str, body: TrackUpdate, conn: DB) -> dict[str, Any]:
+def update_track(track_id: str, body: TrackUpdate, state: State, conn: DB) -> dict[str, Any]:
     track = _track(conn, track_id)
     fields = body.model_dump(exclude_unset=True)
     sets, params = [], []
@@ -233,14 +244,14 @@ def update_track(track_id: str, body: TrackUpdate, conn: DB) -> dict[str, Any]:
         params.append(track_id)
         # Column names come from the TrackUpdate model's fixed fields.
         conn.execute(f"UPDATE mix_tracks SET {', '.join(sets)} WHERE id = ?", params)  # noqa: S608
-    return _detail(conn, track["chapter_id"])
+    return _detail(state, conn, track["chapter_id"])
 
 
 @router.delete("/tracks/{track_id}")
-def delete_track(track_id: str, conn: DB) -> dict[str, Any]:
+def delete_track(track_id: str, state: State, conn: DB) -> dict[str, Any]:
     track = _track(conn, track_id)
     conn.execute("DELETE FROM mix_tracks WHERE id = ?", (track_id,))
-    return _detail(conn, track["chapter_id"])
+    return _detail(state, conn, track["chapter_id"])
 
 
 # ------------------------------------------------------------------ export
@@ -248,7 +259,7 @@ def delete_track(track_id: str, conn: DB) -> dict[str, Any]:
 
 @router.post("/chapters/{chapter_id}/export", status_code=201)
 def export(chapter_id: str, body: Export, state: State, conn: DB) -> dict[str, Any]:
-    chapter = _detail(conn, chapter_id)
+    chapter = _detail(state, conn, chapter_id)
     missing = [s["position"] + 1 for s in chapter["segments"] if s["current"] is None]
     if not chapter["segments"]:
         raise ApiError(409, "nothing_to_export", "Write and generate the chapter first.")

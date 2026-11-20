@@ -1,9 +1,7 @@
-// I2 (same person, new pose): reference photos with roles and pose jobs.
-// Kept beside the components instead of lib/api.ts so image branches merge cleanly;
-// I1 owns the shared reference contract and may replace these helpers.
-import { API, ApiError, api, projectAssets, type Asset, type Job } from "@/lib/api";
+// I2 (same person, new pose): pose figures and pose jobs, on I1's reference
+// contract (uploadAsset with a role, references resolved by the jobs API).
+import { api, projectAssets, uploadAsset, type Asset, type Job, type PhotoRole } from "@/lib/api";
 
-export type RefRole = "person" | "garment" | "pose" | "background";
 export type ImageAsset = Asset & { metadata: Record<string, unknown> };
 
 export const POSE_TASK = "image.pose";
@@ -32,32 +30,16 @@ export const FRAMING_LABEL: Record<string, string> = {
   portrait: "Head and shoulders",
 };
 
-async function errorFrom(res: Response): Promise<ApiError> {
-  try {
-    const body = await res.json();
-    return new ApiError(res.status, body?.error?.code ?? "http_error", body?.error?.message ?? `Request failed (${res.status}).`);
-  } catch {
-    return new ApiError(res.status, "http_error", `Request failed (${res.status}).`);
-  }
-}
-
-export async function uploadReference(projectId: string, file: Blob, name: string, role: RefRole): Promise<ImageAsset> {
-  const form = new FormData();
-  form.append("file", file, name);
-  form.append("kind", "reference");
-  form.append("role", role);
-  let res: Response;
-  try {
-    res = await fetch(`${API}/projects/${projectId}/assets`, { method: "POST", body: form });
-  } catch {
-    throw new ApiError(0, "unreachable", "Can't reach Rasva on your Mac. Is it running and awake?");
-  }
-  if (!res.ok) throw await errorFrom(res);
-  return (await res.json()) as ImageAsset;
-}
+export const uploadReference = async (projectId: string, file: Blob, name: string, role: PhotoRole) => {
+  const f = file instanceof File ? file : new File([file], name, { type: file.type || "image/png" });
+  const a = await uploadAsset(projectId, f, "reference", role);
+  return { ...a, metadata: a.metadata ?? {} } as ImageAsset;
+};
 
 export const imageAssets = async (projectId: string) =>
-  (await projectAssets(projectId)).filter((a) => a.media_type.startsWith("image/")) as ImageAsset[];
+  (await projectAssets(projectId))
+    .filter((a) => a.media_type.startsWith("image/"))
+    .map((a) => ({ ...a, metadata: a.metadata ?? {} })) as ImageAsset[];
 
 export const roleOf = (a: ImageAsset) => (typeof a.metadata?.role === "string" ? (a.metadata.role as string) : undefined);
 export const isPoseFigure = (a: ImageAsset) => a.metadata?.kind === "pose";

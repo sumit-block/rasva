@@ -41,7 +41,7 @@ import httpx
 from rasva import __version__
 from rasva.config import Settings
 from rasva.db import dumps, loads, utcnow
-from rasva.engines.contract import EngineDescriptor, InstallContext, ModelArtifact
+from rasva.engines.contract import EngineDescriptor, InstallContext, ModelArtifact, prepare_owner
 from rasva.engines.registry import EngineRegistry, RegisteredEngine, load_class
 from rasva.jobs.states import JobState
 from rasva.logging_setup import rotate_if_large
@@ -395,7 +395,12 @@ class EnvironmentBuilder:
             shutil.rmtree(work, ignore_errors=True)
 
     async def _run(
-        self, cmd: list[str], env: dict[str, str], log_path: Path, cancel: asyncio.Event
+        self,
+        cmd: list[str],
+        env: dict[str, str],
+        log_path: Path,
+        cancel: asyncio.Event,
+        failure: InstallError | None = None,
     ) -> None:
         with log_path.open("ab") as out:
             out.write(f"\n$ {' '.join(cmd)}\n".encode())
@@ -414,10 +419,36 @@ class EnvironmentBuilder:
                 await wait
                 raise InstallCanceled
         if proc.returncode != 0:
-            raise InstallError(
+            raise failure or InstallError(
                 "environment_failed",
                 "Setting up this engine's software failed. Details are in the engine install log.",
             )
+
+    async def prepare(
+        self, engine: RegisteredEngine, model_dir: Path, cancel: asyncio.Event
+    ) -> None:
+        """Run the engine's one-time prepare step in its own interpreter (contract.prepare)."""
+        owner = prepare_owner(load_class(engine.import_path))
+        if owner is None:
+            return
+        d = engine.descriptor
+        env = {**os.environ, **self._paths.worker_env()}
+        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])  # the backend root
+        env["PYTHONUNBUFFERED"] = "1"
+        log_path = self._paths.logs / "engines" / f"{d.id}-install.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        rotate_if_large(log_path)
+        cmd = [
+            engine.python_executable(self._paths.envs), "-m", "rasva.engines.prepare",
+            "--engine", f"{owner.__module__}:{owner.__qualname__}",
+            "--model-dir", str(model_dir), "--cache-dir", str(self._paths.cache),
+        ]  # fmt: skip
+        failure = InstallError(
+            "prepare_failed",
+            "Preparing the model on this Mac failed. The downloaded files are kept, so "
+            "installing again skips the download. Details are in the engine install log.",
+        )
+        await self._run(cmd, env, log_path, cancel, failure)
 
 
 # ------------------------------------------------------------------ installer
@@ -534,7 +565,15 @@ class Installer:
                 )
             env_s = time.perf_counter() - env_started
 
-            hooks.transition(JobState.PROCESSING, "Checking the installation")
+            prepare_s = 0.0
+            if prepare_owner(load_class(engine.import_path)) is not None:
+                hooks.transition(JobState.PROCESSING, "Preparing the model on this Mac (one time)")
+                prepare_started = time.perf_counter()
+                await self._envs.prepare(engine, model_dir, hooks.cancel)
+                prepare_s = time.perf_counter() - prepare_started
+                hooks.progress(1.0, "Checking the installation")
+            else:
+                hooks.transition(JobState.PROCESSING, "Checking the installation")
             ctx = InstallContext(model_dir=model_dir, cache_dir=self._paths.cache)
             engine_obj = load_class(engine.import_path)()
             if not await asyncio.to_thread(engine_obj.verify, ctx):
@@ -552,6 +591,7 @@ class Installer:
                 "installed_bytes": installed,
                 "download_s": round(download_s, 3),
                 "environment_s": round(env_s, 3),
+                **({"prepare_s": round(prepare_s, 3)} if prepare_s else {}),
             }
         except InstallCanceled:
             # Not installed; partial downloads stay for resume.

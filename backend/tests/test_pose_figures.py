@@ -1,5 +1,6 @@
-"""Reference photos with roles (I1-I4 contract stand-in) and pose figures as
-reusable assets, through the real API, queue and worker."""
+"""Pose figures (I2) through the real API, queue and worker, on I1's reference
+contract: a pose-finder figure is an output asset that can be used again as the
+``pose`` reference, and only as the pose."""
 
 from __future__ import annotations
 
@@ -42,58 +43,34 @@ def pose_job(client, pid, asset_id, role="pose"):
     )
 
 
-def test_upload_stores_role_in_metadata(client):
-    pid = new_project(client)
-    r = upload(client, pid, "person")
-    assert r.status_code == 201 and r.json()["metadata"] == {"role": "person"}
-    assert upload(client, pid).json()["metadata"] == {}
-    bad = upload(client, pid, "face")
-    assert bad.status_code == 422 and bad.json()["error"]["code"] == "invalid_role"
+def extract(client, pid):
+    photo = upload(client, pid, "pose").json()
+    job = wait_for(client, pose_job(client, pid, photo["id"]).json()["id"], {"completed", "failed"})
+    assert job["state"] == "completed", job.get("error_message")
+    return photo, job["outputs"][0]
 
 
 def test_pose_figure_becomes_a_reusable_asset(client):
     pid = new_project(client)
-    photo = upload(client, pid, "pose").json()
-    r = pose_job(client, pid, photo["id"])
-    assert r.status_code == 201, r.text
-    stored = r.json()["inputs"]["references"]
-    # The stored inputs keep the asset id and role (path too, for the worker).
-    assert stored[0]["asset_id"] == photo["id"] and stored[0]["role"] == "pose"
-    job = wait_for(client, r.json()["id"], {"completed", "failed"})
-    assert job["state"] == "completed", job.get("error_message")
-    (out_id,) = job["outputs"]
+    photo, out_id = extract(client, pid)
     asset = client.get(f"/api/v1/assets/{out_id}").json()
     assert asset["kind"] == "output" and asset["media_type"] == "image/png"
     meta = asset["metadata"]
     assert meta["kind"] == "pose" and meta["source_asset_ids"] == [photo["id"]]
     assert meta["framing"] == "full_body" and len(meta["keypoints"]) == 18
-    body = client.get(f"/api/v1/assets/{out_id}/content").content
-    assert body.startswith(b"\x89PNG")
-    # The figure itself can be the reference of a later job (here: read again).
+    assert client.get(f"/api/v1/assets/{out_id}/content").content.startswith(b"\x89PNG")
+    # The figure itself can be a later job's pose reference (here: read again).
     again = pose_job(client, pid, out_id)
     assert again.status_code == 201, again.text
+    ref = again.json()["inputs"]["references"][0]
+    assert ref["asset_id"] == out_id and ref["role"] == "pose"
 
 
-def test_references_are_checked(client):
-    pid, other = new_project(client), new_project(client)
-    photo = upload(client, pid, "pose").json()
-    foreign = upload(client, other, "pose").json()
-    text = client.post(
-        f"/api/v1/projects/{pid}/assets",
-        files={"file": ("notes.txt", b"hello", "text/plain")},
-        data={"kind": "reference"},
-    ).json()
-    cases = [
-        (foreign["id"], "pose", "this project"),
-        (text["id"], "pose", "pictures"),
-        ("ast_missing", "pose", "deleted"),
-        (photo["id"], "face", "Unknown photo role"),
-    ]
-    for asset_id, role, message in cases:
-        r = pose_job(client, pid, asset_id, role)
-        assert r.status_code == 422, r.text
-        assert r.json()["error"]["code"] == "invalid_reference"
-        assert message in r.json()["error"]["message"]
+def test_figure_only_as_the_pose_and_other_outputs_refused(client):
+    pid = new_project(client)
+    _, figure = extract(client, pid)
+    r = pose_job(client, pid, figure, role="person")
+    assert r.status_code == 422 and "only be used as the pose" in r.json()["error"]["message"]
 
 
 def test_no_person_fails_plainly_and_retry_re_resolves(client):

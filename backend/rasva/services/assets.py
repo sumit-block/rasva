@@ -258,3 +258,15 @@ def promote_output(
         dest.unlink(missing_ok=True)
         raise
     return get(conn, asset_id)
+
+
+def set_metadata(conn: sqlite3.Connection, asset_id: str, **fields: Any) -> dict[str, Any]:
+    """Merge fields into an asset's metadata (None removes a key)."""
+    meta = get(conn, asset_id)["metadata"]
+    for key, value in fields.items():
+        if value is None:
+            meta.pop(key, None)
+        else:
+            meta[key] = value
+    conn.execute("UPDATE assets SET metadata = ? WHERE id = ?", (dumps(meta), asset_id))
+    return get(conn, asset_id)

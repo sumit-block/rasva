@@ -1,0 +1,11 @@
+# Inputs for the Stable Diffusion 1.5 engine environment (ADR-0003, ADR-0006). Regenerate with:
+#   uv pip compile requirements.in --generate-hashes --only-binary :all: \
+#     --python-version 3.12 --python-platform aarch64-apple-darwin \
+#     --no-header --no-annotate -o requirements.lock
+diffusers==0.43.0
+torch==2.11.0
+transformers==5.23.0
+safetensors==0.8.0
+pillow==13.0.0
+# Needed by the Rasva worker protocol (rasva.engines.contract).
+pydantic>=2.7,<3

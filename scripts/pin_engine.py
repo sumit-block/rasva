@@ -2,6 +2,7 @@
 """Pin an engine's model files to exact Hugging Face commits with SHA-256 per file.
 
     python3 scripts/pin_engine.py chatterbox
+    python3 scripts/pin_engine.py sd15
     python3 scripts/pin_engine.py indicf5 [--reviewed-code]
     python3 scripts/pin_engine.py kokoro            (same as scripts/pin_kokoro.py)
 
@@ -69,6 +70,24 @@ SPECS = {
             '{"checkpoint": "<weights file>", "vocab": "<vocab.txt path>", '
             '"model_cfg": {...DiT settings from its config...}, "use_ema": true}'
         ),
+    },
+    "sd15": {
+        "engine": "sd15",
+        "dir": "sd15",
+        "sources": [{
+            # fp16 safetensors, configs and tokenizer only. No .ckpt files, no EMA
+            # weights, and no safety checker (owner decision, ADR-0006).
+            "repo": "stable-diffusion-v1-5/stable-diffusion-v1-5", "subdir": "",
+            "files": [
+                "model_index.json",
+                "scheduler/scheduler_config.json",
+                "text_encoder/config.json", "text_encoder/model.fp16.safetensors",
+                "tokenizer/merges.txt", "tokenizer/special_tokens_map.json",
+                "tokenizer/tokenizer_config.json", "tokenizer/vocab.json",
+                "unet/config.json", "unet/diffusion_pytorch_model.fp16.safetensors",
+                "vae/config.json", "vae/diffusion_pytorch_model.fp16.safetensors",
+            ],
+        }],
     },
 }  # fmt: skip
 SKIP = {".gitattributes", "README.md"}

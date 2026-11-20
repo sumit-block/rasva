@@ -42,6 +42,7 @@ export const TASK_LABEL: Record<string, string> = {
   "diagnostic.tone": "Pipeline check",
   "audio.narrate": "Narration",
   "audio.assemble": "Chapter export",
+  "image.generate": "Image",
   "model.install": "Install engine",
   "model.remove": "Remove engine",
 };

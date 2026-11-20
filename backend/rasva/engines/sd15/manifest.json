@@ -1,0 +1,72 @@
+{
+  "engine": "sd15",
+  "sources": [
+    {
+      "repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+      "revision": "451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "subdir": "",
+      "files": [
+        {
+          "path": "model_index.json",
+          "sha256": "e2f6f22e274374010aec30c79eb2d6e53fff4a36ac0225523a92cb2d41a83347",
+          "size_bytes": 541
+        },
+        {
+          "path": "scheduler/scheduler_config.json",
+          "sha256": "699cce92eb7c122e2eb7dfdea78e6187fda76a5ed4a8e42319b85610e620e091",
+          "size_bytes": 308
+        },
+        {
+          "path": "text_encoder/config.json",
+          "sha256": "845df614cb9327ae7bbea027316246fae917827407da6df13572e41b5f93b4cc",
+          "size_bytes": 617
+        },
+        {
+          "path": "text_encoder/model.fp16.safetensors",
+          "sha256": "77795e2023adcf39bc29a884661950380bd093cf0750a966d473d1718dc9ef4e",
+          "size_bytes": 246144864
+        },
+        {
+          "path": "tokenizer/merges.txt",
+          "sha256": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+          "size_bytes": 524619
+        },
+        {
+          "path": "tokenizer/special_tokens_map.json",
+          "sha256": "c4864a9376a8401918425bed71fc14fc0e81f9b59ec45c1cf96cccb2df508eac",
+          "size_bytes": 472
+        },
+        {
+          "path": "tokenizer/tokenizer_config.json",
+          "sha256": "00439066fcba73de57644cf41e4e3b9f2dbb09d7f3fc2005898ba52399045882",
+          "size_bytes": 806
+        },
+        {
+          "path": "tokenizer/vocab.json",
+          "sha256": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349",
+          "size_bytes": 1059962
+        },
+        {
+          "path": "unet/config.json",
+          "sha256": "78f474de6bab3d893868f37be97b636ae65c0df3073ed3256ca458ff599b5f96",
+          "size_bytes": 743
+        },
+        {
+          "path": "unet/diffusion_pytorch_model.fp16.safetensors",
+          "sha256": "c83908253f9a64d08c25fc90874c9c8aef9a329ce1ca5fb909d73b0c83d1ea21",
+          "size_bytes": 1719125304
+        },
+        {
+          "path": "vae/config.json",
+          "sha256": "786a7d21647ddea6a04b9675c03d3cb45e90a2f3c6da5fbda2c54ade040036de",
+          "size_bytes": 547
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.fp16.safetensors",
+          "sha256": "4fbcf0ebe55a0984f5a5e00d8c4521d52359af7229bb4d81890039d2aa16dd7c",
+          "size_bytes": 167335342
+        }
+      ]
+    }
+  ]
+}

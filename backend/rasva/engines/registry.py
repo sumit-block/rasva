@@ -14,6 +14,7 @@ BUILTIN: dict[str, str] = {
     "kokoro-82m": "rasva.engines.kokoro:KokoroEngine",
     "chatterbox-multilingual": "rasva.engines.chatterbox:ChatterboxEngine",
     "indicf5": "rasva.engines.indicf5:IndicF5Engine",
+    "sd15": "rasva.engines.sd15:StableDiffusion15Engine",
     "audio-mixer": "rasva.engines.builtin.mixer:MixerEngine",
 }
 TEST_ONLY: dict[str, str] = {

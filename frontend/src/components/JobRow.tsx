@@ -46,9 +46,11 @@ export function JobRow({ job }: { job: Job }) {
                 {job.inputs.preview ? "Preview" : "Full narration"} · voice {String(job.inputs.voice_id)} ·{" "}
               </>
             )}
+            {job.task === "image.generate" && <>Seed {String(job.inputs.seed)} · {String(job.inputs.steps)} steps · </>}
             Started {timeAgo(job.created_at)}
             {job.retry_of && " · retry"}
             {typeof job.metrics.audio_s === "number" && ` · ${job.metrics.audio_s.toFixed(1)} s of audio`}
+            {typeof job.metrics.generation_s === "number" && ` · made in ${job.metrics.generation_s.toFixed(0)} s`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -78,7 +80,14 @@ export function JobRow({ job }: { job: Job }) {
       {job.state === "completed" &&
         job.outputs.map((id) => (
           <div key={id} className="mt-3 flex flex-wrap items-center gap-3">
-            <audio controls preload="none" src={assetUrl(id)} className="h-10 max-w-full" aria-label="Result playback" />
+            {job.task.startsWith("image.") ? (
+              <a href={assetUrl(id)} target="_blank" rel="noreferrer" className="block">
+                <img src={assetUrl(id)} alt={`Generated image, seed ${String(job.inputs.seed ?? "")}`} loading="lazy"
+                  width={512} height={512} className="aspect-square w-full max-w-sm rounded-lg border border-border object-cover" />
+              </a>
+            ) : (
+              <audio controls preload="none" src={assetUrl(id)} className="h-10 max-w-full" aria-label="Result playback" />
+            )}
             <Button size="sm" variant="ghost" onClick={() => (window.location.href = assetUrl(id, true))}>
               <Download aria-hidden /> Download
             </Button>

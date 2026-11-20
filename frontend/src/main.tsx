@@ -17,7 +17,8 @@ import { PronunciationPage } from "@/pages/Pronunciation";
 import { VoicesPage } from "@/pages/Voices";
 import { WelcomePage } from "@/pages/Welcome";
 import { PairPage } from "@/pages/Pair";
-import { ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
+import { ImageStudioPage } from "@/pages/ImageStudio";
+import { NotFoundPage } from "@/pages/Placeholders";
 
 document.documentElement.dataset.theme ??= "dark";
 

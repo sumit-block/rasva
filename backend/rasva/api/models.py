@@ -1,7 +1,8 @@
 """Engine catalogue, install and removal (P0-013).
 
-Install and remove are queued jobs (task ``model.install`` / ``model.remove``),
-so they share the single-job queue, progress stream, cancel and retry.
+Install, software update and remove are queued jobs (task ``model.install`` /
+``model.update`` / ``model.remove``), so they share the single-job queue,
+progress stream, cancel and retry.
 """
 
 from __future__ import annotations
@@ -65,6 +66,8 @@ def _describe(
         "installed_bytes": record["installed_bytes"] if record else 0,
         "install_state": install_state,
         "install_error": (record or {}).get("metadata", {}).get("error"),
+        # The engine's software list changed since it was installed (ADR-0003).
+        "software_update_available": installer.software_update_available(engine),
         "needs_license_confirmation": d.license_class in NEEDS_CONFIRMATION,
         "active_job": model_job,
         "compatibility": load_class(engine.import_path)().check_compatibility(facts).model_dump(),
@@ -102,6 +105,8 @@ def install_model(
             return job  # idempotent: already queued or running
         if job["task"] == "model.remove":
             raise ApiError(409, "engine_busy", "This engine is being removed. Try again after.")
+        if job["task"] == "model.update":
+            raise ApiError(409, "engine_busy", "This engine is being updated. Try again after.")
     if ModelStore(conn).is_installed(d.id):
         raise ApiError(409, "already_installed", "This engine is already installed.")
 
@@ -139,6 +144,44 @@ def install_model(
             "license_accepted": body.accept_license,
             "required_bytes": installer.required_bytes(engine),
         },
+    )
+    state.bus.publish({"type": "job", "job": job})
+    state.orchestrator.notify()
+    return job
+
+
+@router.post("/models/{engine_id}/update", status_code=202)
+def update_model(engine_id: str, state: State, conn: DB) -> dict[str, Any]:
+    """Rebuild only the engine's software environment; model files are kept."""
+    engine = _engine(state, engine_id)
+    d = engine.descriptor
+    if not d.requires_install:
+        raise ApiError(409, "built_in", "This engine is built in and is updated with Rasva.")
+    open_jobs = _open_jobs(conn, d.id)
+    for job in open_jobs:
+        if job["task"] == "model.update":
+            return job  # idempotent: already queued or running
+    if open_jobs:
+        raise ApiError(
+            409,
+            "engine_in_use",
+            "This engine has jobs waiting or running. Let them finish or cancel them first.",
+        )
+    if not ModelStore(conn).is_installed(d.id):
+        raise ApiError(409, "not_installed", "This engine is not installed.")
+    installer = Installer(state.settings, conn, state.registry, state.storage)
+    if not installer.software_update_available(engine):
+        raise ApiError(409, "up_to_date", "This engine's software is already up to date.")
+    try:
+        installer.update_preflight(engine)
+    except InstallError as exc:
+        raise ApiError(507, exc.code, exc.user_message) from exc
+    job = repo.create(
+        conn,
+        project_id=None,
+        task="model.update",
+        engine_id=d.id,
+        inputs={"required_bytes": installer.update_required_bytes(engine)},
     )
     state.bus.publish({"type": "job", "job": job})
     state.orchestrator.notify()

@@ -354,6 +354,12 @@ class EnvironmentBuilder:
             and marker.read_text().strip() == sha256_file(lock)
         )
 
+    def work_dir(self, engine_id: str) -> Path:
+        return self._paths.envs / f".{engine_id}.partial"
+
+    def backup_dir(self, engine_id: str) -> Path:
+        return self._paths.envs / f".{engine_id}.previous"
+
     async def build(
         self,
         engine_id: str,
@@ -363,9 +369,70 @@ class EnvironmentBuilder:
     ) -> None:
         if self.is_current(engine_id, lock):
             return
-        uv = self.uv()
         target = self._paths.env_dir(engine_id)
-        work = self._paths.envs / f".{engine_id}.partial"
+        work = self.work_dir(engine_id)
+        try:
+            await self.build_into(engine_id, lock, work, cancel, python_version)
+            shutil.rmtree(target, ignore_errors=True)
+            os.replace(work, target)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def swap_in(self, engine_id: str) -> Path | None:
+        """Move a finished ``.partial`` build into place, keeping the old env aside.
+
+        Returns the backup path (or ``None`` when there was no previous env). The
+        caller either discards it with :meth:`discard_backup` once the new env is
+        verified, or puts it back with :meth:`restore_backup`.
+        """
+        target = self._paths.env_dir(engine_id)
+        work = self.work_dir(engine_id)
+        backup = self.backup_dir(engine_id)
+        shutil.rmtree(backup, ignore_errors=True)
+        had_old = target.exists()
+        if had_old:
+            os.replace(target, backup)
+        try:
+            os.replace(work, target)
+        except BaseException:
+            if had_old:
+                os.replace(backup, target)
+            raise
+        return backup if had_old else None
+
+    def restore_backup(self, engine_id: str) -> None:
+        target = self._paths.env_dir(engine_id)
+        backup = self.backup_dir(engine_id)
+        if not backup.exists():
+            return
+        shutil.rmtree(target, ignore_errors=True)
+        os.replace(backup, target)
+
+    def discard_backup(self, engine_id: str) -> None:
+        shutil.rmtree(self.backup_dir(engine_id), ignore_errors=True)
+
+    def recover_swaps(self) -> None:
+        """After a crash mid-swap: put a backup back if the env is missing, else drop it."""
+        if not self._paths.envs.exists():
+            return
+        for backup in self._paths.envs.glob(".*.previous"):
+            engine_id = backup.name[1 : -len(".previous")]
+            if not (self._paths.env_dir(engine_id) / "bin" / "python").exists():
+                log.warning("restoring engine environment after an interrupted update")
+                self.restore_backup(engine_id)
+            else:
+                shutil.rmtree(backup, ignore_errors=True)
+
+    async def build_into(
+        self,
+        engine_id: str,
+        lock: Path,
+        work: Path,
+        cancel: asyncio.Event,
+        python_version: str | None = None,
+    ) -> None:
+        """Build a fresh environment from ``lock`` in ``work`` (not yet in place)."""
+        uv = self.uv()
         shutil.rmtree(work, ignore_errors=True)
         env = {**os.environ, **self._paths.worker_env()}
         for key in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
@@ -375,24 +442,19 @@ class EnvironmentBuilder:
         log_path = self._paths.logs / "engines" / f"{engine_id}-install.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         rotate_if_large(log_path)
-        try:
-            python = python_version or sys.executable
-            await self._run(
-                [uv, "venv", "--relocatable", "--python", python, str(work)],
-                env, log_path, cancel,
-            )  # fmt: skip
-            await self._run(
-                [
-                    uv, "pip", "install", "--python", str(work / "bin" / "python"),
-                    "--require-hashes", "--only-binary", ":all:", "--no-config", "-r", str(lock),
-                ],
-                env, log_path, cancel,
-            )  # fmt: skip
-            (work / ENV_MARKER).write_text(sha256_file(lock))
-            shutil.rmtree(target, ignore_errors=True)
-            os.replace(work, target)
-        finally:
-            shutil.rmtree(work, ignore_errors=True)
+        python = python_version or sys.executable
+        await self._run(
+            [uv, "venv", "--relocatable", "--python", python, str(work)],
+            env, log_path, cancel,
+        )  # fmt: skip
+        await self._run(
+            [
+                uv, "pip", "install", "--python", str(work / "bin" / "python"),
+                "--require-hashes", "--only-binary", ":all:", "--no-config", "-r", str(lock),
+            ],
+            env, log_path, cancel,
+        )  # fmt: skip
+        (work / ENV_MARKER).write_text(sha256_file(lock))
 
     async def _run(
         self, cmd: list[str], env: dict[str, str], log_path: Path, cancel: asyncio.Event
@@ -481,6 +543,7 @@ class Installer:
                     self._store.set_state(engine.descriptor, "failed", metadata=meta)
                 else:
                     self._store.delete(engine_id)
+        self._envs.recover_swaps()
         self.cleanup_orphans()
 
     def cleanup_orphans(self) -> int:
@@ -593,6 +656,104 @@ class Installer:
             )
             done_before += a.size_bytes
         return transferred
+
+    # ---- software (environment) updates ----
+
+    def software_update_available(self, engine: RegisteredEngine) -> bool:
+        """Installed, has an environment lockfile, and the env was built from another one."""
+        d = engine.descriptor
+        if not (d.requires_install and d.requirements_lock and self._store.is_installed(d.id)):
+            return False
+        try:
+            lock = resolve_lockfile(engine)
+        except InstallError:
+            return False
+        return not self._envs.is_current(d.id, lock)
+
+    def update_required_bytes(self, engine: RegisteredEngine) -> int:
+        """Peak extra space: the new environment is built beside the old one."""
+        d = engine.descriptor
+        current = disk_usage_bytes(self._paths.env_dir(d.id))
+        if current:
+            return current
+        return max(d.approx_installed_bytes - sum(a.size_bytes for a in d.artifacts), 0)
+
+    def update_preflight(self, engine: RegisteredEngine) -> None:
+        store = SettingsStore(self._conn)
+        check = self._storage.preflight(
+            self.update_required_bytes(engine),
+            "download",
+            budget_bytes=store.get("storage.budget_bytes"),
+            os_reserve_bytes=store.get("storage.os_reserve_bytes"),
+        )
+        if not check.allowed:
+            raise InstallError("storage_full", " ".join(check.reasons), check.reasons)
+
+    async def update(self, engine: RegisteredEngine, hooks: Hooks) -> dict[str, Any]:
+        """Rebuild only the engine's environment from its current lockfile.
+
+        Model files are never downloaded, moved or deleted. The install record
+        stays ``installed`` throughout: on failure or cancel the previous
+        environment is put back and keeps working.
+        """
+        d = engine.descriptor
+        record = self._store.get(d.id)
+        if not record or record["install_state"] != "installed":
+            raise InstallError("not_installed", "This engine is not installed.")
+        if not d.requirements_lock:
+            raise InstallError("up_to_date", "This engine's software is up to date.")
+        lock = resolve_lockfile(engine)
+        self.update_preflight(engine)
+
+        model_dir = self._paths.model_dir(d.modality, d.id)
+        work = self._envs.work_dir(d.id)
+        started = time.perf_counter()
+        try:
+            hooks.transition(JobState.PREPARING, "Updating engine software")
+            try:
+                await self._envs.build_into(d.id, lock, work, hooks.cancel, d.python_version)
+            except InstallError as exc:
+                if exc.code != "environment_failed":
+                    raise
+                raise InstallError(
+                    "environment_failed",
+                    "Updating this engine's software failed, so the previous version was kept "
+                    "and still works. Check your internet connection and retry; details are in "
+                    "the engine install log.",
+                ) from exc
+            env_s = time.perf_counter() - started
+            if hooks.cancel.is_set():
+                raise InstallCanceled
+
+            hooks.transition(JobState.PROCESSING, "Checking the installation")
+            self._envs.swap_in(d.id)
+            try:
+                ctx = InstallContext(model_dir=model_dir, cache_dir=self._paths.cache)
+                engine_obj = load_class(engine.import_path)()
+                if not await asyncio.to_thread(engine_obj.verify, ctx):
+                    raise InstallError(
+                        "verify_failed",
+                        "The updated engine failed its self-check, so the previous version "
+                        "was kept.",
+                    )
+            except BaseException:
+                self._envs.restore_backup(d.id)
+                raise
+
+            hooks.transition(JobState.FINALIZING, "Finishing")
+            self._envs.discard_backup(d.id)
+            installed = disk_usage_bytes(model_dir) + disk_usage_bytes(self._paths.env_dir(d.id))
+            meta = {k: v for k, v in record["metadata"].items() if k != "error"}
+            self._store.set_state(
+                d, "installed", installed_bytes=installed, metadata=meta, validated=True
+            )
+            return {
+                "installed_bytes": installed,
+                "environment_s": round(env_s, 3),
+            }
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+            self._storage.invalidate()
 
     async def remove(self, engine: RegisteredEngine, hooks: Hooks) -> dict[str, Any]:
         d = engine.descriptor

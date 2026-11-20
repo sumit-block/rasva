@@ -46,12 +46,15 @@ from rasva.services.storage import StorageService
 log = logging.getLogger(__name__)
 
 READY_TIMEOUT_S = 60.0
-MODEL_TASKS = frozenset({"model.install", "model.remove"})
+MODEL_TASKS = frozenset({"model.install", "model.update", "model.remove"})
 PROGRESS_WRITE_INTERVAL_S = 0.25
 
 MSG_CRASH = (
     "The engine stopped unexpectedly. Your other work is safe. If your Mac was low on "
     "memory, close other apps or choose a lighter preset, then retry."
+)
+MSG_SOFTWARE_UPDATE = (
+    "A software update is available for this engine. Open Models and choose Update, then retry."
 )
 MSG_MEMORY_KILL = (
     "Your Mac ran low on memory and macOS stopped the engine. Your other work is safe. "
@@ -328,7 +331,7 @@ class Orchestrator:
             self._storage.invalidate()
 
     async def _execute_model_task(self, job: dict[str, Any]) -> None:
-        """Install or remove an engine. Runs in-process: network and disk only."""
+        """Install, update or remove an engine. Runs in-process: network and disk only."""
         job_id = job["id"]
         engine = self._registry.get(job["engine_id"])
         if engine is None:
@@ -355,11 +358,18 @@ class Orchestrator:
                 return
             if job["task"] == "model.install":
                 metrics = await self._installer.install(engine, hooks)
-            else:
+            elif job["task"] == "model.update":
+                # A resident worker would keep running the old environment.
+                if self._worker and self._worker.engine_id == engine.descriptor.id:
+                    await self._drop_worker()
+                metrics = await self._installer.update(engine, hooks)
+            elif job["task"] == "model.remove":
                 self._transition(job_id, JobState.PREPARING, detail="Stopping the engine")
                 if self._worker and self._worker.engine_id == engine.descriptor.id:
                     await self._drop_worker()
                 metrics = await self._installer.remove(engine, hooks)
+            else:
+                raise InstallError("unsupported_task", "Rasva does not know this engine task.")
             self._transition(job_id, JobState.COMPLETED, detail="Done", metrics=metrics)
         except InstallCanceled:
             with contextlib.suppress(InvalidTransition):
@@ -389,6 +399,9 @@ class Orchestrator:
             await self._drop_worker()
             w = None
         if w is None:
+            if self._installer.software_update_available(engine):
+                # Policy (ADR-0003): run on the old environment; Models offers the update.
+                log.warning("engine %s is running on an outdated environment", engine.descriptor.id)
             w = await self._spawn(engine)
             self._worker = w
         if not w.loaded:
@@ -398,7 +411,10 @@ class Orchestrator:
             if event is None:
                 return None
             if event["event"] == "error":
-                self._fail(job_id, event.get("code", "load_failed"), event.get("message"))
+                message = event.get("message")
+                if self._installer.software_update_available(engine):
+                    message = f"{message} {MSG_SOFTWARE_UPDATE}" if message else MSG_SOFTWARE_UPDATE
+                self._fail(job_id, event.get("code", "load_failed"), message)
                 await self._drop_worker()
                 return None
             w.loaded = True

@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -402,6 +403,10 @@ if args[0] == "venv":
     (target / "bin" / "python").write_text("fake")
 elif args[:2] == ["pip", "install"]:
     assert "--require-hashes" in args
+    assert args[args.index("--only-binary") + 1] == ":all:"
+    if os.environ.get("FAKE_UV_SLOW"):
+        import time
+        time.sleep(float(os.environ["FAKE_UV_SLOW"]))
     sys.exit(1 if os.environ.get("FAKE_UV_FAIL") else 0)
 """)
     script.chmod(0o755)
@@ -444,6 +449,195 @@ def test_failed_environment_leaves_nothing_half_built(isettings, server, fake_uv
         assert (s.paths.logs / "engines" / "test-envfail-install.log").exists()
     finally:
         c.__exit__(None, None, None)
+
+
+# ----------------------------------------------------------- software updates
+
+
+def _env_engine(isettings, server, fake_uv, name):
+    from dataclasses import replace
+
+    s = replace(isettings, uv_executable=fake_uv)
+    c = client_with(
+        s, make_engine(name, artifacts(server), requirements_lock="data/engine-lock.txt")
+    )
+    engine_id = f"test-{name.lower()}"
+    done = wait_for(c, install(c, engine_id).json()["id"], TERMINAL)
+    assert done["state"] == "completed", done
+    return s, c, engine_id
+
+
+def _make_outdated(s, engine_id):
+    """Pretend the env was built from an older lockfile, and mark it so we can tell."""
+    env = s.paths.env_dir(engine_id)
+    (env / ".rasva-lock-sha256").write_text("0" * 64)
+    (env / "old-env-sentinel").write_text("old")
+    return env
+
+
+def _no_leftovers(s):
+    return not list(s.paths.envs.glob(".*.partial")) and not list(s.paths.envs.glob(".*.previous"))
+
+
+def update(c, engine_id):
+    return c.post(f"/api/v1/models/{engine_id}/update")
+
+
+def test_update_rebuilds_environment_without_downloading(isettings, server, fake_uv):
+    s, c, eid = _env_engine(isettings, server, fake_uv, "Upd")
+    try:
+        assert model(c, eid)["software_update_available"] is False
+        assert update(c, eid).json()["error"]["code"] == "up_to_date"
+        env = _make_outdated(s, eid)
+        assert model(c, eid)["software_update_available"] is True
+
+        weights = model_dir(s, eid) / "weights" / "model.bin"
+        before = weights.stat()
+        requests_before = list(server.requests)
+
+        r = update(c, eid)
+        assert r.status_code == 202, r.text
+        job = r.json()
+        assert job["task"] == "model.update" and job["project_id"] is None
+        assert update(c, eid).json()["id"] == job["id"]  # idempotent while open
+        # While updating, install and remove are refused rather than racing it.
+        assert install(c, eid).status_code == 409
+        assert c.delete(f"/api/v1/models/{eid}").status_code == 409
+
+        done = wait_for(c, job["id"], TERMINAL)
+        assert done["state"] == "completed", done
+        assert [e["state"] for e in done["events"]] == [
+            "queued", "preparing", "processing", "finalizing", "completed",
+        ]  # fmt: skip
+
+        # No model file was fetched, rewritten or deleted.
+        assert server.requests == requests_before
+        after = weights.stat()
+        assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+        assert weights.read_bytes() == BIG
+
+        # The new env is in place; the old one is gone; nothing is left behind.
+        lock = sha((Path(__file__).parent / "data" / "engine-lock.txt").read_bytes())
+        assert (env / ".rasva-lock-sha256").read_text() == lock
+        assert not (env / "old-env-sentinel").exists()
+        assert _no_leftovers(s)
+        info = model(c, eid)
+        assert info["install_state"] == "installed"
+        assert info["software_update_available"] is False
+        assert info["installed_bytes"] >= len(BIG)
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_failed_update_keeps_old_environment(isettings, server, fake_uv, monkeypatch):
+    s, c, eid = _env_engine(isettings, server, fake_uv, "UpdFail")
+    try:
+        env = _make_outdated(s, eid)
+        monkeypatch.setenv("FAKE_UV_FAIL", "1")
+        done = wait_for(c, update(c, eid).json()["id"], TERMINAL)
+        assert done["state"] == "failed" and done["error_code"] == "environment_failed"
+        assert "previous version was kept" in done["error_message"]
+        assert (env / "old-env-sentinel").read_text() == "old"
+        assert (env / "bin" / "python").exists()
+        assert _no_leftovers(s)
+        info = model(c, eid)
+        assert info["install_state"] == "installed" and info["software_update_available"] is True
+
+        monkeypatch.delenv("FAKE_UV_FAIL")
+        retry = c.post(f"/api/v1/jobs/{done['id']}/retry")
+        assert retry.status_code == 201 and retry.json()["task"] == "model.update"
+        assert wait_for(c, retry.json()["id"], TERMINAL)["state"] == "completed"
+        assert model(c, eid)["software_update_available"] is False
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_update_failing_self_check_rolls_back(isettings, server, fake_uv):
+    import tests.install_engines as engines
+
+    s, c, eid = _env_engine(isettings, server, fake_uv, "UpdVerify")
+    try:
+        env = _make_outdated(s, eid)
+        engines.UpdVerify.verify = lambda self, ctx: False
+        done = wait_for(c, update(c, eid).json()["id"], TERMINAL)
+        assert done["state"] == "failed" and done["error_code"] == "verify_failed"
+        assert (env / "old-env-sentinel").read_text() == "old"
+        assert (env / ".rasva-lock-sha256").read_text() == "0" * 64
+        assert _no_leftovers(s)
+        assert model(c, eid)["install_state"] == "installed"
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_canceled_update_keeps_old_environment(isettings, server, fake_uv, monkeypatch):
+    s, c, eid = _env_engine(isettings, server, fake_uv, "UpdCancel")
+    try:
+        env = _make_outdated(s, eid)
+        monkeypatch.setenv("FAKE_UV_SLOW", "5")
+        job = update(c, eid).json()
+        wait_for(c, job["id"], {"preparing"})
+        c.post(f"/api/v1/jobs/{job['id']}/cancel")
+        assert wait_for(c, job["id"], TERMINAL)["state"] == "canceled"
+        assert (env / "old-env-sentinel").read_text() == "old"
+        assert _no_leftovers(s)
+        info = model(c, eid)
+        assert info["install_state"] == "installed" and info["software_update_available"] is True
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_update_refused_while_engine_busy_or_not_installed(isettings, server, fake_uv):
+    s, c, eid = _env_engine(isettings, server, fake_uv, "UpdBusy")
+    try:
+        _make_outdated(s, eid)
+        project = c.post("/api/v1/projects", json={"name": "p", "module": "audio"}).json()
+        blocker = c.post(
+            "/api/v1/jobs",
+            json={
+                "project_id": project["id"],
+                "task": "test.run",
+                "engine_id": "test-fault",
+                "inputs": {"behaviour": "slow", "seconds": 3},
+            },
+        ).json()
+        queued = c.post(
+            "/api/v1/jobs",
+            json={"project_id": project["id"], "task": "test.installed", "engine_id": eid},
+        )
+        assert queued.status_code == 201, queued.text
+        r = update(c, eid)
+        assert r.status_code == 409 and r.json()["error"]["code"] == "engine_in_use"
+        for j in (queued.json(), blocker):
+            c.post(f"/api/v1/jobs/{j['id']}/cancel")
+            wait_for(c, j["id"], TERMINAL)
+
+        assert update(c, "diagnostic-tone").json()["error"]["code"] == "built_in"
+        assert update(c, "nope").status_code == 404
+    finally:
+        c.__exit__(None, None, None)
+
+    c2 = client_with(
+        s, make_engine("UpdNone", artifacts(server), requirements_lock="data/engine-lock.txt")
+    )
+    try:
+        assert model(c2, "test-updnone")["software_update_available"] is False
+        r = update(c2, "test-updnone")
+        assert r.status_code == 409 and r.json()["error"]["code"] == "not_installed"
+    finally:
+        c2.__exit__(None, None, None)
+
+
+def test_restart_restores_environment_after_interrupted_swap(isettings, server, fake_uv):
+    s, c, eid = _env_engine(isettings, server, fake_uv, "UpdCrash")
+    c.__exit__(None, None, None)
+    env = s.paths.env_dir(eid)
+    backup = s.paths.envs / f".{eid}.previous"
+    os.replace(env, backup)  # crash after moving the old env aside, before the new one
+
+    with make_client(s, extra_engines=("tests.install_engines:UpdCrash",)) as c2:
+        assert (env / "bin" / "python").exists()
+        assert not backup.exists()
+        assert c2.get(f"/api/v1/models/{eid}").json()["install_state"] == "installed"
 
 
 # ----------------------------------------------------------- recovery / schema

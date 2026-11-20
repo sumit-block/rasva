@@ -125,3 +125,55 @@ class CloningNarrator(FakeNarrator):
             "text": text, "reference": ref, "voice_id": "cloned", "speed": 1.0,
             "preview": bool(inputs.get("preview")), "language": ref["language"], "script": "",
         }  # fmt: skip
+
+
+class BilingualNarrator(FakeNarrator):
+    """Chatterbox-shaped: speaks English and Hindi, each sentence in its own
+    language, with built-in or cloned voices (tests only)."""
+
+    descriptor = EngineDescriptor(
+        **{
+            **FakeNarrator.descriptor.model_dump(),
+            "id": "test-bilingual",
+            "display_name": "Bilingual narrator",
+            "features": ["preset_voices", "voice_cloning", "preview", "language_per_sentence"],
+            "voices": [
+                {"id": "default_en", "display_name": "Voice", "language": "en"},
+                {"id": "default_hi", "display_name": "Voice", "language": "hi"},
+            ],
+            "default_voices": {"en": "default_en", "hi": "default_hi"},
+        }
+    )
+
+    def validate_input(self, task: str, inputs: dict[str, Any]) -> dict[str, Any]:
+        from pathlib import Path
+
+        text = str(inputs.get("text") or "").strip()
+        if not text:
+            raise EngineError("invalid_input", "Write or paste some text to narrate.")
+        out: dict[str, Any] = {"text": text, "preview": bool(inputs.get("preview")), "speed": 1.0}
+        ref = inputs.get("reference")
+        if ref:
+            if not Path(ref["path"]).is_file() or not ref.get("transcript"):
+                raise EngineError("invalid_reference", "The voice recording is missing.")
+            out.update(voice_id="own", reference=ref)
+        elif inputs.get("voice_id") in ("default_en", "default_hi"):
+            out["voice_id"] = inputs["voice_id"]
+        else:
+            raise EngineError("invalid_input", "Choose a voice.")
+        language = inputs.get("language")
+        if language not in (None, "", "en", "hi"):
+            raise EngineError("invalid_input", "Language must be English or Hindi.")
+        if language:
+            out["language"] = language
+        return out
+
+    def run(self, task: str, inputs: dict[str, Any], ctx: RunContext) -> RunResult:
+        from rasva.audio.text import reading_language
+
+        result = super().run(task, inputs, ctx)
+        # What each sentence was read as, the way Chatterbox chooses it.
+        result.outputs[0].metadata["languages"] = [
+            inputs.get("language") or reading_language(s.text) for s in segment(inputs["text"])
+        ]
+        return result

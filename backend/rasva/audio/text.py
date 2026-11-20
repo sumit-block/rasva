@@ -168,6 +168,37 @@ def segment(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> list[Segment]:
     return out
 
 
+def reading_language(text: str) -> Literal["en", "hi"]:
+    """The language an engine that speaks both reads a sentence in.
+
+    Any Devanagari makes it Hindi (English words inside a Hindi sentence are
+    fine, ADR-0005); otherwise English. Shared by the engines and the
+    pronunciation dictionary so both make the same choice for every sentence.
+    """
+    return "hi" if script_counts(text)["devanagari"] else "en"
+
+
+def sentence_spans(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> list[tuple[int, int]]:
+    """(start, end) offsets in ``text`` of each piece :func:`segment` would make.
+
+    ``text`` should already be NFC-normalised. Whitespace may differ from the
+    segmented pieces (segment() collapses it), so each piece is found as its
+    words separated by any whitespace, searching forward from the last piece.
+    """
+    out: list[tuple[int, int]] = []
+    pos = 0
+    for seg in segment(text, max_chars):
+        words = seg.text.split()
+        if not words:
+            continue
+        m = re.compile(r"\s+".join(re.escape(w) for w in words)).search(text, pos)
+        if m is None:  # cannot happen for NFC input; skip rather than misplace
+            continue
+        out.append((m.start(), m.end()))
+        pos = m.end()
+    return out
+
+
 DEFAULT_GROUP_CHARS = 200
 
 

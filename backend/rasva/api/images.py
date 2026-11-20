@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from rasva.api.deps import DB, State
 from rasva.api.errors import ApiError
-from rasva.api.jobs import _validate
+from rasva.api.jobs import _resolve_references, _validate
 from rasva.jobs import repository as repo
 from rasva.jobs.states import TERMINAL, JobState
 from rasva.services import assets as asset_svc
@@ -91,6 +91,8 @@ def make_version(job_id: str, body: AgainBody, state: State, conn: DB) -> dict[s
             raw = apply_preset(engine.descriptor, raw)
         except PresetError as exc:
             raise ApiError(422, "invalid_preset", str(exc)) from exc
+    # Same reference checks as POST /jobs and retry: photos may have been deleted since.
+    raw = _resolve_references(state, conn, old["project_id"], raw)
     extras.update(svc.engine_extras(conn, engine.descriptor))
     inputs = {**_validate(state, conn, old["engine_id"], old["task"], raw), **extras}
     job = repo.create(

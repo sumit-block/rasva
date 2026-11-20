@@ -14,9 +14,9 @@ from rasva.engines.sd15 import StableDiffusion15Engine
 from rasva.services import cleanup, image_export
 from rasva.services import images as image_svc
 from tests.conftest import make_client, wait_for
-from tests.fake_image_editor import png_bytes
+from tests.fake_versioned_image import png_bytes
 
-PAINTER = "tests.fake_image_editor:FakeImageEditor"
+PAINTER = "tests.fake_versioned_image:FakeVersionedImage"
 TERMINAL = {"completed", "failed", "canceled", "interrupted"}
 API = "/api/v1"
 LATER = time.time() + 3 * 86_400  # "now" for cleanup: everything is days old
@@ -34,7 +34,7 @@ def pid(c):
 
 
 def generate(c, pid, prompt="a lighthouse at dusk", **extra):
-    body = {"project_id": pid, "task": "image.generate", "engine_id": "test-image-editor",
+    body = {"project_id": pid, "task": "image.generate", "engine_id": "test-versioned-image",
             "inputs": {"prompt": prompt, "preset": "quick"}, **extra}  # fmt: skip
     r = c.post(f"{API}/jobs", json=body)
     assert r.status_code == 201, r.text
@@ -86,7 +86,7 @@ def test_versions_group_variations_and_same_seed(c, pid):
 
     # Explicit version_of on POST /jobs joins the group too.
     r = c.post(f"{API}/jobs", json={"project_id": pid, "task": "image.generate",
-                                     "engine_id": "test-image-editor", "version_of": first["id"],
+                                     "engine_id": "test-versioned-image", "version_of": first["id"],
                                      "inputs": {"prompt": "edited by hand"}})  # fmt: skip
     hand = wait_for(c, r.json()["id"], TERMINAL)
     assert group_with(c, pid, hand["id"])["id"] == g["id"]
@@ -110,7 +110,7 @@ def test_favourite_is_current_and_validated(c, pid):
 def test_version_of_must_be_an_image_in_the_same_project(c, pid):
     first = generate(c, pid)
     other = c.post(f"{API}/projects", json={"name": "Else", "module": "image"}).json()["id"]
-    body = {"project_id": other, "task": "image.generate", "engine_id": "test-image-editor",
+    body = {"project_id": other, "task": "image.generate", "engine_id": "test-versioned-image",
             "version_of": first["id"], "inputs": {"prompt": "x"}}  # fmt: skip
     r = c.post(f"{API}/jobs", json=body)
     assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_version"
@@ -124,7 +124,7 @@ def test_edits_of_the_same_references_are_versions(c, pid):
 
     def edit(prompt, refs):
         inputs = {"prompt": prompt, "references": refs}
-        body = {"project_id": pid, "task": "image.edit", "engine_id": "test-image-editor"}
+        body = {"project_id": pid, "task": "image.edit", "engine_id": "test-versioned-image"}
         r = c.post(f"{API}/jobs", json={**body, "inputs": inputs})
         assert r.status_code == 201, r.text
         return wait_for(c, r.json()["id"], TERMINAL)
@@ -135,10 +135,12 @@ def test_edits_of_the_same_references_are_versions(c, pid):
     d = edit("in the jacket", [{"asset_id": person, "role": "person"}])
     assert group_with(c, pid, a["id"])["id"] == group_with(c, pid, b["id"])["id"]
     assert group_with(c, pid, d["id"])["id"] != group_with(c, pid, a["id"])["id"]
-    assert b["inputs"]["references"] == list(reversed(refs))
+    strip = lambda rs: [{"asset_id": r["asset_id"], "role": r["role"]} for r in rs]  # noqa: E731
+    assert strip(b["inputs"]["references"]) == list(reversed(refs))
+    assert all(r["path"].endswith(".png") for r in b["inputs"]["references"])  # resolved (I1)
     # References survive "again" and output metadata names its sources.
     v = again(c, a["id"])
-    assert v["inputs"]["references"] == refs
+    assert strip(v["inputs"]["references"]) == refs
     meta = c.get(f"{API}/assets/{v['outputs'][0]}").json()["metadata"]
     assert set(meta["source_asset_ids"]) == {person, garment}
 
@@ -186,13 +188,11 @@ def test_cleanup_offers_only_older_non_favourite_versions(c, pid, settings):
     no_fav = [generate(c, pid, prompt="no favourite")]
     no_fav.append(again(c, no_fav[0]["id"]))
     single = generate(c, pid, prompt="only one")
-    # An older version used as the source of an edit is kept.
+    # The newest version of a group with no favourite is kept; so is a photo used by an edit.
     source = again(c, no_fav[0]["id"])
-    edit = c.post(f"{API}/jobs", json={"project_id": pid, "task": "image.edit",
-                                        "engine_id": "test-image-editor", "inputs": {
-                                            "prompt": "x", "references": [
-                                                {"asset_id": source["outputs"][0],
-                                                 "role": "person"}]}})  # fmt: skip
+    refs = [{"asset_id": reference, "role": "person"}]
+    body = {"project_id": pid, "task": "image.edit", "engine_id": "test-versioned-image"}
+    edit = c.post(f"{API}/jobs", json={**body, "inputs": {"prompt": "x", "references": refs}})
     edit = wait_for(c, edit.json()["id"], TERMINAL)
     out = lambda j: j["outputs"][0]  # noqa: E731
 
@@ -220,7 +220,7 @@ def test_cleanup_offers_only_older_non_favourite_versions(c, pid, settings):
     g = group_with(c, pid, fav_group[0]["id"])
     assert g["current_job_id"] == fav_group[1]["id"]
     assert next(v for v in g["versions"] if v["id"] == fav_group[0]["id"])["outputs"] == []
-    # With the source gone from the group, the no-favourite group keeps its newest.
+    # The no-favourite group keeps its newest.
     assert group_with(c, pid, no_fav[0]["id"])["current_job_id"] == source["id"]
 
 
@@ -249,7 +249,7 @@ def test_interrupted_image_job_retries_with_same_seed(settings, monkeypatch):
     with make_client(settings, extra_engines=(PAINTER,)) as c:
         pid = c.post(f"{API}/projects", json={"name": "P", "module": "image"}).json()["id"]
         r = c.post(f"{API}/jobs", json={"project_id": pid, "task": "image.generate",
-                                         "engine_id": "test-image-editor",
+                                         "engine_id": "test-versioned-image",
                                          "inputs": {"prompt": "a cat", "seed": 1234}})  # fmt: skip
         job = wait_for(c, r.json()["id"], {"processing"})
     # Simulate a hard stop (power loss): the row is still "processing" at next start.
@@ -299,14 +299,14 @@ def test_low_memory_mode_reaches_engines_that_support_it(c, pid, settings):
 
 
 def test_low_memory_is_not_sent_to_engines_without_the_feature():
-    from tests.fake_image_editor import FakeImageEditor
+    from tests.fake_versioned_image import FakeVersionedImage
 
     mem = sqlite3.connect(":memory:")
     mem.row_factory = sqlite3.Row
     mem.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
     mem.execute("INSERT INTO settings VALUES ('image.low_memory', 'true', '')")
     assert image_svc.engine_extras(mem, StableDiffusion15Engine.descriptor) == {}
-    assert image_svc.engine_extras(mem, FakeImageEditor.descriptor) == {"low_memory": True}
+    assert image_svc.engine_extras(mem, FakeVersionedImage.descriptor) == {"low_memory": True}
 
 
 # ------------------------------------------------------------------ export
@@ -322,7 +322,7 @@ def test_png_export_with_and_without_details(c, pid):
     assert f'filename="rasva-image-seed-{seed}.png"' in labelled.headers["content-disposition"]
     text = image_export.text_chunks(labelled.content)
     assert "AI-generated" in text["Comment"] and f"Seed {seed}" in text["Comment"]
-    assert "Test image editor" in text["Source"]
+    assert "Test versioned image" in text["Source"]
     assert b"private description" not in labelled.content
 
     bare = c.get(f"{API}/assets/{aid}/export", params={"details": "false"}).content

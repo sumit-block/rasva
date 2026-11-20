@@ -200,7 +200,7 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 
 ## I4 status: image versions, export, cleanup (engine-independent parts)
 
-Built and tested with a fake image engine (`tests/fake_image_editor.py`). No real
+Built and tested with a fake image engine (`tests/fake_versioned_image.py`). No real
 model was run for this work.
 
 | Item | Status |
@@ -218,8 +218,8 @@ model was run for this work.
 | Item | Status |
 | --- | --- |
 | Small image baseline works on M2 | Done (I0, SD 1.5, measured 2026-11-20). Quality review by eye still open |
-| Authorized person reference uploads work | Not done here (I1, in progress) |
-| Multi-reference role assignment works | Not done here (I1). Versions already group edits by reference photo and role |
+| Authorized person reference uploads work | Uploads with a role (person, garment, pose, background) are built (I1 base). No editing engine runs yet (FLUX.2 Klein 4B in progress). Owner decision: no consent check for person photos |
+| Multi-reference role assignment works | Up to 4 photos with roles per edit job (I1 base), tested with a fake engine. Versions group edits by photo and role |
 | Same-person pose change tested | Not done (I2) |
 | Clothing change workflow tested | Not done (I3) |
 | Before/after, versions and PNG/JPEG exports work | Built and tested with a fake engine. Still to check with a real engine on the M2, and JPEG in Safari on a phone |

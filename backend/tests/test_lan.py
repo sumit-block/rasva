@@ -207,7 +207,7 @@ def test_paired_device_makes_and_watches_images(lan_settings, tmp_path):
     """Image Studio over home Wi-Fi (PRD phase I4): submit, watch, version, export."""
     s = lan_settings
     mac = httpx.Client(base_url=f"http://127.0.0.1:{s.port}/api/v1")
-    with Running(s, extra_engines=("tests.fake_image_editor:FakeImageEditor",)):
+    with Running(s, extra_engines=("tests.fake_versioned_image:FakeVersionedImage",)):
         mac.post("/lan/enable")
         wait_for_port(s.lan_port)
         ca_file = tmp_path / "ca.pem"
@@ -221,7 +221,7 @@ def test_paired_device_makes_and_watches_images(lan_settings, tmp_path):
         assert phone.patch("/settings", json={"image.low_memory": True}).status_code == 200
         with phone.stream("GET", "/jobs/stream", timeout=10) as events:
             r = phone.post("/jobs", json={"project_id": pid, "task": "image.generate",
-                                           "engine_id": "test-image-editor",
+                                           "engine_id": "test-versioned-image",
                                            "inputs": {"prompt": "a kite"}})  # fmt: skip
             assert r.status_code == 201, r.text
             job_id = r.json()["id"]

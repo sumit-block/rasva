@@ -8,6 +8,13 @@ Never offered for deletion: uploads (references and imports), the take each
 segment currently uses, a take waiting for review, the latest export of a
 chapter, experiment recordings, anything belonging to a job that is still
 running, installed models (removed from Models), and engine caches.
+
+Images (phase I4): reference photos are uploads, so never offered. Of each
+image's versions, the favourite (or, with none chosen, the newest finished
+version) is never offered, nor is any image used as the source of another job,
+nor an image with no version record. Other versions are offered once they are a
+day old, off by default. Files of failed or interrupted image jobs count as
+temporary files.
 """
 
 from __future__ import annotations
@@ -24,6 +31,7 @@ from typing import Any
 from rasva.config import Paths
 from rasva.jobs.states import TERMINAL
 from rasva.services import assets as asset_svc
+from rasva.services import images as image_svc
 
 DAY = 86_400
 PREVIEW_MIN_AGE_S = DAY  # keep today's previews: you may still be comparing them
@@ -44,6 +52,14 @@ GROUPS: dict[str, dict[str, Any]] = {
         "label": "Temporary files",
         "description": "Leftovers from finished or interrupted jobs and uploads.",
         "default": True,
+    },
+    "older_image_versions": {
+        "label": "Older image versions",
+        "description": (
+            "Versions of an image other than your favourite (or the newest, if you haven't "
+            "chosen one). You won't be able to compare with them again."
+        ),
+        "default": False,
     },
     "superseded_takes": {
         "label": "Replaced sentence versions",
@@ -148,9 +164,20 @@ def plan(conn: sqlite3.Connection, paths: Paths, now: float | None = None) -> Pl
         if chapter_id:
             latest_export[chapter_id] = r["id"]
     existing_chapters = {r["id"] for r in conn.execute("SELECT id FROM chapters")}
+    keep_images = _image_assets_to_keep(conn)
 
     for row in outputs:
-        if row["job_id"] in open_ids or row["state"] != "completed":
+        if row["job_id"] in open_ids:
+            continue
+        if image_svc.is_image_task(row["task"]):
+            if row["id"] in keep_images[0]:
+                continue
+            if row["state"] != "completed":
+                result.groups["temp"].append(_asset_item(paths, row))
+            elif row["job_id"] in keep_images[1] and now - _epoch(row["created_at"]) >= DAY:
+                result.groups["older_image_versions"].append(_asset_item(paths, row))
+            continue
+        if row["state"] != "completed":
             continue
         inputs = json.loads(row["inputs"] or "{}")
         created = row["created_at"]
@@ -199,6 +226,43 @@ def plan(conn: sqlite3.Connection, paths: Paths, now: float | None = None) -> Pl
             ):
                 result.groups["untracked"].append(Item(bytes=_size(f), path=f))
     return result
+
+
+def _image_assets_to_keep(conn: sqlite3.Connection) -> tuple[set[str], set[str]]:
+    """(asset ids never offered, image job ids that are offerable older versions).
+
+    Kept: images used as a source by any job (inputs.references or the output's
+    source_asset_ids). Offerable: completed versions that are not their group's
+    current version. Image jobs without a version record are never offerable.
+    """
+    sources: set[str] = set()
+    for r in conn.execute("SELECT inputs FROM jobs WHERE task LIKE 'image.%'"):
+        for ref in json.loads(r["inputs"] or "{}").get("references") or []:
+            if isinstance(ref, dict) and ref.get("asset_id"):
+                sources.add(str(ref["asset_id"]))
+    for r in conn.execute("SELECT metadata FROM assets WHERE kind = 'output'"):
+        meta = json.loads(r["metadata"] or "{}")
+        sources.update(str(a) for a in meta.get("source_asset_ids") or [])
+
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    favourites: dict[str, str | None] = {}
+    for r in conn.execute(
+        "SELECT v.group_id, g.favourite_job_id, j.id, j.state, j.outputs, j.created_at"
+        " FROM image_versions v JOIN image_groups g ON g.id = v.group_id"
+        " JOIN jobs j ON j.id = v.job_id"
+    ):
+        favourites[r["group_id"]] = r["favourite_job_id"]
+        groups[r["group_id"]].append(
+            {"id": r["id"], "state": r["state"], "outputs": json.loads(r["outputs"] or "[]"),
+             "created_at": r["created_at"]}
+        )  # fmt: skip
+    offerable: set[str] = set()
+    for gid, versions in groups.items():
+        current = image_svc.current_job_id(favourites[gid], versions)
+        if current is None:
+            continue  # nothing finished yet: keep everything
+        offerable.update(v["id"] for v in versions if v["id"] != current)
+    return sources, offerable
 
 
 def _epoch(iso: str) -> float:

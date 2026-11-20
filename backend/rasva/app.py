@@ -27,6 +27,7 @@ from rasva.api import (
     system,
 )
 from rasva.api import audio as audio_api
+from rasva.api import images as images_api
 from rasva.api import storage as storage_api
 from rasva.api import voices as voices_api
 from rasva.api.deps import AppState
@@ -100,7 +101,7 @@ def create_app(
 
     api = APIRouter(prefix=API_PREFIX)
     routers = (system, projects, assets, jobs, models, settings, experiments, pronunciations)
-    for module in (*routers, chapters, devices, storage_api, audio_api, voices_api):
+    for module in (*routers, chapters, devices, storage_api, audio_api, voices_api, images_api):
         api.include_router(module.router)
     app.include_router(api)
 

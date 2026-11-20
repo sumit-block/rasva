@@ -18,6 +18,7 @@ from rasva.engines.registry import load_class
 from rasva.jobs import repository as repo
 from rasva.jobs.orchestrator import MODEL_TASKS
 from rasva.jobs.states import JobState
+from rasva.services import images as image_svc
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
 from rasva.services import voices as voice_svc
@@ -36,6 +37,8 @@ class JobCreate(BaseModel):
     task: str = Field(min_length=1, max_length=100)
     engine_id: str | None = None
     inputs: dict[str, Any] = {}
+    # Images only: make this job a version of an earlier one (PRD phase I4).
+    version_of: str | None = None
 
 
 def _validate(
@@ -69,6 +72,10 @@ def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
         # Built only by the chapter export endpoint, from the project's own assets.
         raise ApiError(422, "unsupported_task", "Export chapters from Audio Studio.")
     project_svc.get(conn, body.project_id)
+    try:
+        image_svc.check_version_of(conn, body.project_id, body.task, body.version_of)
+    except image_svc.VersionError as exc:
+        raise ApiError(422, "invalid_version", str(exc)) from exc
     engine_id = body.engine_id
     if engine_id is None:
         store = ModelStore(conn)
@@ -100,10 +107,13 @@ def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
             conn, engine.descriptor, body.project_id, raw
         )
         extras.update(narration_extras)
+    if engine is not None:
+        extras.update(image_svc.engine_extras(conn, engine.descriptor))
     inputs = {**_validate(state, conn, engine_id, body.task, raw), **extras}
     job = repo.create(
         conn, project_id=body.project_id, task=body.task, engine_id=engine_id, inputs=inputs
     )
+    image_svc.assign(conn, job, version_of=body.version_of)
     state.bus.publish({"type": "job", "job": job})
     state.orchestrator.notify()
     return job
@@ -180,7 +190,8 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
     # Retry exactly what was generated before, including its pronunciation choices.
     keep = (*pronunciation_svc.EXTRA_KEYS, "preset", "chapter_id", "segment_id", "voice_profile_id")
     extras = {k: v for k, v in old["inputs"].items() if k in keep}
-    raw = {k: v for k, v in old["inputs"].items() if k not in keep and k != "reference"}
+    added = ("reference", *image_svc.ADDED_KEYS)
+    raw = {k: v for k, v in old["inputs"].items() if k not in keep and k not in added}
     if old["inputs"].get("voice_profile_id"):
         # Re-resolve: the voice may have been deleted since.
         engine = state.registry.get(old["engine_id"])
@@ -191,6 +202,9 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
             )  # fmt: skip
         except (voice_svc.VoiceError, AttributeError) as exc:
             raise ApiError(422, "invalid_voice", str(exc)) from exc
+    engine = state.registry.get(old["engine_id"])
+    if engine is not None:
+        extras.update(image_svc.engine_extras(conn, engine.descriptor))  # current setting
     inputs = {**_validate(state, conn, old["engine_id"], old["task"], raw), **extras}
     job = repo.create(
         conn,
@@ -200,6 +214,7 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
         inputs=inputs,
         retry_of=job_id,
     )
+    image_svc.assign(conn, job)  # a retry is another version of the same image
     state.bus.publish({"type": "job", "job": job})
     state.orchestrator.notify()
     return job

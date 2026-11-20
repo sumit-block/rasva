@@ -15,6 +15,8 @@ DEFAULTS: dict[str, Any] = {
     "onboarding.completed": False,
     "onboarding.step": 0,  # resume point for an interrupted first-run setup
     "lan.enabled": False,
+    # Ask image engines that support it to use less memory (services/images.py).
+    "image.low_memory": False,
 }
 
 # Validators keep obviously unsafe values out (e.g. a 0-byte OS reserve).

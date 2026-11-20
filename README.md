@@ -135,10 +135,10 @@ engine package. Generate it with
 
 | Item | Status |
 | --- | --- |
-| A2-005 pronunciation dictionary | Done: written forms → "say it as", per voice language, global or per project (project wins), whole-word Devanagari-aware matching |
+| A2-005 pronunciation dictionary | Done: written forms → "say it as", global or per project (project wins), whole-word Devanagari-aware matching. Entries are chosen by the voice's language, or, on engines that speak both (Chatterbox, including cloned voices), by each sentence's language: English entries for Latin-script sentences, Hindi entries for sentences with Devanagari |
 | A2-006 pronunciation preview | Done: hear an entry (approved or not) with any installed voice, alone or in an example sentence |
-| A2-009 approved-correction persistence | Done: only approved entries apply; original text, engine text and every substitution are stored on the job; retries reuse the same choices |
-| A2-002 language detection | Done: per sentence (Hindi, Roman Hinglish, English, mixed, unclear) with confidence |
+| A2-009 approved-correction persistence | Done: only approved entries apply; original text, engine text and every substitution (with the language it was chosen for) are stored on the job; retries reuse the same choices |
+| A2-002 language detection | Done: per sentence (Hindi, Roman Hinglish, English, mixed, unclear) with confidence. **Manual override:** in Audio Studio each chapter sentence can be set to Automatic, English or Hindi. The choice is saved with the chapter and kept when other sentences are edited. Engines that speak both read the sentence in that language and the dictionary uses it. Voices that read everything in one language keep the choice for later and say so |
 | A2-003 mixed-language segmentation | Done: Devanagari/Latin spans with exact offsets |
 | A2-004 transliteration suggestions | Done (basic, rule-based). **Roman Hinglish input is out of scope for now** ([ADR-0005](docs/adr/0005-input-scripts.md)): write English or Devanagari |
 | A2-001 Indic engine | Draft: IndicF5 adapter (no remote code, local files, Devanagari only, own voice). **Not run; manifest, file layout and lockfile must be made on the Mac** ([notes](docs/engines/indicf5.md)) |

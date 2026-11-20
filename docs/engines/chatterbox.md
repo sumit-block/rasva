@@ -51,7 +51,8 @@ long tails. These clips may have trailing noise or babble.
 | CPU by default; Apple GPU (MPS) opt-in | Measured on the M2 on 2026-11-20 with the same two-sentence texts, three runs each. English took 27–46 s on CPU and 32–51 s on MPS. Hindi took 50–86 s on CPU and 65–166 s on MPS. MPS was no faster and much less consistent, and the RSS metric does not count its GPU memory. Set `RASVA_TORCH_DEVICE=mps` to try it. If loading on MPS fails, the engine logs the reason and reloads on CPU. |
 | `setuptools<81` in the lockfile | `resemble-perth` (the watermarker) imports `pkg_resources` without declaring setuptools. Without it, the watermarker is silently `None` and loading fails with `'NoneType' object is not callable`. |
 | Chinese word segmenter disabled | On every load, Chatterbox's tokenizer creates a `spacy_pkuseg` segmenter, which downloads a 34 MB model from GitHub into `~/.pkuseg`. That download is unpinned, unverified and outside the managed folder, and `HF_HUB_OFFLINE` does not stop it. Rasva sends only `en` and `hi`, so the adapter marks the module as missing, and the tokenizer skips Chinese segmentation. A load-and-generate run with every network call blocked made no connection attempts. |
-| Language per sentence | A sentence with any Devanagari is sent as `hi`, otherwise `en`, so mixed scripts read with the right front end. Roman Hinglish is read as English. |
+| Language per sentence | A sentence with any Devanagari is sent as `hi`, otherwise `en`, so mixed scripts read with the right front end. Roman Hinglish is read as English. A sentence the user marks English or Hindi in Audio Studio is sent with that language instead (optional `language` input, `en` or `hi`, applied to every sentence of the job). The engine declares the `language_per_sentence` feature. |
+| Pronunciation entries per sentence | Because of the rule above, dictionary entries are chosen by each sentence's language (or the user's choice), not by the voice's label. A voice cloned from a Hindi recording gets English entries for English sentences, and the built-in "Hindi" voice behaves the same. |
 | Voice conditioning cached | `prepare_conditionals` runs once per (recording, expressiveness), not per sentence or job. Switching back to a built-in voice restores the built-in conditioning. |
 | No speed control | Chatterbox has none; the speed slider is hidden. Pacing comes from the presets (`cfg_weight`). |
 | Presets Steady / Natural / Expressive | Map to `exaggeration`, `cfg_weight`, `temperature`. Values are the upstream defaults and suggestions, not tuned for Hindi yet. |
@@ -62,10 +63,6 @@ long tails. These clips may have trailing noise or babble.
 - Listening review: English quality, the long-clip problem above,
   how Mahabharata names are pronounced, and cloned-voice similarity.
 - Whether the presets need tuning for this voice and for Hindi.
-- Pronunciation entries for English do not apply to a cloned voice whose
-  recording is labelled Hindi: entries are chosen by the voice's language, and a
-  cloned voice takes its language from the recording. Entries set to "any"
-  language do apply.
 
 ## Watermark and licences
 

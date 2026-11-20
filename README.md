@@ -72,6 +72,33 @@ redirected into the managed root, and are blocked from downloading during
 inference ([ADR-0002](docs/adr/0002-managed-storage.md)). Job progress streams
 to the UI over Server-Sent Events.
 
+### Memory guard (PRD §24)
+
+Before an engine loads cold, Rasva compares the memory macOS can hand out now
+(psutil's `available`: free plus inactive memory) with the engine's measured
+peak (`approx_peak_memory_bytes`) plus a safety margin. If there is not enough,
+it first unloads another engine that is sitting idle and checks again. If there
+is still not enough, the job stays **queued** with the detail "Waiting for
+memory: … Close other apps or wait for them to finish; this starts on its own",
+and Rasva re-checks every 5 seconds. You can cancel a waiting job as usual.
+Waiting was chosen over failing the job: memory usually frees on its own when
+another app finishes, and a queued job needs no new state, survives a restart
+and starts without a Retry. A job that could never fit (its engine's peak plus
+the margin is more than the Mac's total memory) fails at once with a plain
+message and Retry.
+
+Jobs that load nothing new skip the check: a job for the engine already
+loaded, model installs and removals, and light built-in steps such as the
+mixer. These may run past a job that is waiting for memory; jobs that load an
+engine keep their queue order.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `memory.safety_margin_bytes` | 1 GB | 0–8 GB. Room left for macOS, the browser and Rasva itself after the engine's peak. An assumption, not a measurement. Changeable only on the Mac (Settings → Memory) |
+
+The Jobs page shows free memory and, when a job is held back, how much it
+needs (`GET /api/v1/system/status` → `memory`, `orchestrator.memory_wait`).
+
 ### Adding an engine
 
 Subclass `rasva.engines.contract.Engine`:
@@ -170,6 +197,7 @@ pronunciation entry does not mark existing takes as outdated.
 | Privacy audit | Done (automated): private text never reaches logs; engine logs rotate; Kokoro's text-quoting warnings suppressed |
 | Offline test | Done (automated, app process): no outbound connections during normal use; engine workers run with offline flags; UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off |
 | Mac sleep guidance | Shown when Wi-Fi access is on |
+| Memory guard (PRD §24) | Done (automated tests with mocked memory readings): cold starts wait until available memory covers the engine's peak plus a 1 GB margin, after unloading an idle other engine; status and Jobs page show memory ([details](#memory-guard-prd-24)). **Still to do on the M2:** real engines under the guard, and how quickly `available` recovers after an engine exits. With the measured peaks, Stable Diffusion needs 10 GB available and Chatterbox 7 GB; on 2026-11-20, with other work open, psutil reported 5.9 GB, so both would have waited |
 | Usability testing · release checklist | Needs people and the M2 |
 
 To use Rasva from a phone: on the Mac, open Settings → Phone & other devices →
@@ -196,4 +224,5 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Image Studio | Done (first version): description, Quick / Balanced / Detailed, and in Advanced mode Avoid, seed, steps and guidance; results show the image, seed and time |
 | Measurements (M2, 2026-11-20) | 6 of 6 completed; cold load 14.5 s; median 52.6 s per 512 × 512 image at 25 steps; GPU memory reserved 8.5 GB; installed 2.75 GB ([details](docs/engines/sd15.md)) |
 | Exit-gate checks | Saved outputs are reproducible (same seed gives an identical file); the engine unloads, and Kokoro narrated normally afterwards; no network use; prompts stay out of logs |
-| Still open | Quality review by eye; image experiments (§20.2 weights); a memory guard before image jobs |
+| Memory guard | Image jobs wait for about 10 GB available memory (9 GB measured peak + 1 GB margin) before a cold start ([details](#memory-guard-prd-24)) |
+| Still open | Quality review by eye; image experiments (§20.2 weights); checking the memory guard with the real engine on the M2 |

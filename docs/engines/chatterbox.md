@@ -58,6 +58,11 @@ long tails. These clips may have trailing noise or babble.
 
 ## What is not known yet
 
+- How often the memory guard holds Chatterbox back. A cold start waits until
+  psutil reports 7 GB available (the 6 GB descriptor peak plus the 1 GB default
+  margin; README, "Memory guard"). Warm jobs on a loaded Chatterbox are not
+  checked. Not yet observed on the M2 with the real engine.
+
 - Devanagari: measurements and quality (deferred by the owner, 2026-11-20).
 - Listening review: English quality, the long-clip problem above,
   how Mahabharata names are pronounced, and cloned-voice similarity.

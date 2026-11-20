@@ -13,7 +13,7 @@ exercises the full pipeline: queue → worker → progress → saved file → pl
 
 ## Run it
 
-Requires Python 3.11+, [`uv`](https://docs.astral.sh/uv/) and Node 20+.
+Requires Python 3.11+, [`uv`](https://docs.astral.sh/uv/) and Node 22.12+ (or 20.19+; see `.nvmrc`).
 
 ```bash
 scripts/start.sh          # builds the UI, serves everything at http://127.0.0.1:8765

@@ -12,6 +12,8 @@ dependencies = [
     "httpx>=0.27",
     # Audio assembly and mixing (chapter export).
     "numpy>=2.0",
+    # Local certificate authority for encrypted home Wi-Fi access (ADR-0004).
+    "cryptography>=43",
 ]
 
 [dependency-groups]
@@ -47,3 +49,5 @@ ignore = ["S101", "S603"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S"]
+# Inline HTML/CSS template for the plain-HTTP setup page.
+"rasva/lan/server.py" = ["E501"]

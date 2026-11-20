@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from rasva import __version__
-from rasva.api.deps import DB, State
+from rasva.api.deps import DB, Client, State
 from rasva.services import system_check
 from rasva.services.settings_store import SettingsStore
 from rasva.services.storage import PLANNING_BANDS_GB
@@ -50,11 +50,12 @@ def check(state: State, conn: DB) -> dict[str, Any]:
 
 
 @router.get("/status")
-def status(state: State, conn: DB) -> dict[str, Any]:
+def status(state: State, conn: DB, client: Client) -> dict[str, Any]:
     """Compact header status: Mac readiness, active job, storage remaining (PRD §7.3)."""
     s = _storage(state, conn)
     return {
         "orchestrator": state.orchestrator.status(),
         "storage": {k: s[k] for k in ("used_bytes", "budget_bytes", "remaining_bytes", "level")},
         "settings": SettingsStore(conn).all(),
+        "client": {"kind": client.get("kind"), "device": client.get("device")},
     }

@@ -16,6 +16,7 @@ from rasva import __version__
 from rasva.api import (
     assets,
     chapters,
+    devices,
     errors,
     experiments,
     jobs,
@@ -31,8 +32,10 @@ from rasva.db import connect, migrate
 from rasva.engines.registry import EngineRegistry
 from rasva.jobs.events import EventBus
 from rasva.jobs.orchestrator import Orchestrator
+from rasva.lan.server import LanError, LanManager
 from rasva.logging_setup import setup_logging
 from rasva.security import LocalOnlyGuard
+from rasva.services.settings_store import SettingsStore
 from rasva.services.storage import StorageService
 
 log = logging.getLogger(__name__)
@@ -62,12 +65,24 @@ def create_app(
         bus = EventBus()
         bus.bind(asyncio.get_running_loop())
         orchestrator = Orchestrator(cfg, lambda: connect(paths.db_file), registry, storage, bus)
-        app.state.rasva = AppState(cfg, registry, storage, bus, orchestrator, version)
+        lan = LanManager(cfg, app)
+        app.state.rasva = AppState(cfg, registry, storage, bus, orchestrator, version, lan)
         await orchestrator.start()
+        conn = connect(paths.db_file)
+        try:
+            lan_enabled = SettingsStore(conn).get("lan.enabled")
+        finally:
+            conn.close()
+        if lan_enabled:
+            try:
+                await lan.start()
+            except LanError as exc:
+                log.warning("home Wi-Fi access could not start: %s", exc)
         log.info("Rasva Studio %s ready", __version__, extra={"home": str(paths.home)})
         try:
             yield
         finally:
+            await lan.stop()
             await orchestrator.stop()
 
     app = FastAPI(
@@ -82,7 +97,7 @@ def create_app(
 
     api = APIRouter(prefix=API_PREFIX)
     routers = (system, projects, assets, jobs, models, settings, experiments, pronunciations)
-    for module in (*routers, chapters):
+    for module in (*routers, chapters, devices):
         api.include_router(module.router)
     app.include_router(api)
 

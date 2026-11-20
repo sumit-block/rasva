@@ -18,8 +18,8 @@ def main() -> int:
         loopback = cfg.host == "localhost"
     if not loopback:
         print(
-            "Home Wi-Fi access is not available yet. It ships with device pairing and "
-            "encryption (phase A5). Rasva will only listen on this Mac.",
+            "Rasva's main port only listens on this Mac. Turn on home Wi-Fi access in "
+            "Settings instead: it adds a separate, encrypted port for paired devices.",
             file=sys.stderr,
         )
         return 2
@@ -32,6 +32,7 @@ def main() -> int:
         port=cfg.port,
         log_config=None,
         access_log=False,  # URLs can contain ids; keep logs minimal
+        proxy_headers=False,  # never trust X-Forwarded-For: client IPs drive access rules
         timeout_graceful_shutdown=15,
     )
     return 0

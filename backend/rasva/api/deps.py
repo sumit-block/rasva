@@ -3,9 +3,9 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 
 from rasva.config import Settings
 from rasva.db import connect
@@ -24,6 +24,7 @@ class AppState:
     bus: EventBus
     orchestrator: Orchestrator
     schema_version: int
+    lan: Any = None  # rasva.lan.server.LanManager
 
     def preflight(self, conn: sqlite3.Connection, required: int, purpose: Purpose) -> Preflight:
         store = SettingsStore(conn)
@@ -49,3 +50,17 @@ def get_db(request: Request) -> Iterator[sqlite3.Connection]:
 
 State = Annotated[AppState, Depends(get_state)]
 DB = Annotated[sqlite3.Connection, Depends(get_db)]
+
+
+def client_of(request: Request) -> dict[str, Any]:
+    return request.scope.get("state", {}).get("rasva_client", {"kind": "local"})
+
+
+def require_local(request: Request) -> None:
+    """Owner-only actions: allowed on the Mac itself, never from a paired device."""
+    if client_of(request).get("kind") != "local":
+        raise HTTPException(403, "This can only be changed on the Mac running Rasva Studio.")
+
+
+Client = Annotated[dict[str, Any], Depends(client_of)]
+LocalOnly = Depends(require_local)

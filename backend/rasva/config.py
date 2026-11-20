@@ -95,6 +95,11 @@ class Paths:
         return self.tmp / "uploads"
 
     @property
+    def secrets(self) -> Path:
+        """Certificates and encrypted keys for home Wi-Fi access (owner-only)."""
+        return self.home / "secrets"
+
+    @property
     def downloads(self) -> Path:
         """Resumable partial downloads (``<sha256>.part``), kept across restarts."""
         return self.tmp / "downloads"
@@ -171,6 +176,13 @@ class Settings:
     uv_executable: str | None = None
     download_retries: int = 3
     download_backoff_s: float = 1.0
+    # Home Wi-Fi access (ADR-0004). Off until the owner enables it on the Mac.
+    lan_port: int = 8766
+    lan_setup_port: int = 8767
+    lan_bind_host: str = "0.0.0.0"  # noqa: S104 - guarded: private-network clients only
+    use_keychain: bool | None = None  # None = macOS Keychain when available
+    # Tests only: treat loopback as the LAN and accept these extra host names.
+    lan_test_mode: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -184,5 +196,7 @@ class Settings:
             port=int(os.environ.get("RASVA_PORT", DEFAULT_PORT)),
             enable_test_engines=os.environ.get("RASVA_ENABLE_TEST_ENGINES") == "1",
             uv_executable=os.environ.get("RASVA_UV"),
+            lan_port=int(os.environ.get("RASVA_LAN_PORT", 8766)),
+            lan_setup_port=int(os.environ.get("RASVA_LAN_SETUP_PORT", 8767)),
             frontend_dist=dist if dist.is_dir() else None,
         )

@@ -7,7 +7,10 @@ decisions are recorded in [`docs/adr`](docs/adr).
 
 **Current phase:** A1, Lightweight Narration Baseline. The A0 platform is done.
 The Kokoro engine and Audio Studio are built, and Kokoro is pinned, installed
-and measured on the M2; see [docs/engines/kokoro.md](docs/engines/kokoro.md). A built-in diagnostic engine
+and measured on the M2; see [docs/engines/kokoro.md](docs/engines/kokoro.md).
+Image work has started early (owner decision, [ADR-0006](docs/adr/0006-image-baseline-early.md)):
+I0, Stable Diffusion 1.5, generates 512 × 512 images on the M2; see
+[docs/engines/sd15.md](docs/engines/sd15.md). A built-in diagnostic engine
 exercises the full pipeline: queue → worker → progress → saved file → playback.
 
 ## Run it
@@ -43,6 +46,7 @@ backend/rasva/
   engines/kokoro/      Kokoro adapter, pinned model manifest, macOS arm64 lockfile
   engines/chatterbox/  Chatterbox adapter, pinned model manifest and lockfile
   engines/indicf5/     IndicF5 draft adapter (manifest, layout and lockfile made on the Mac)
+  engines/sd15/        Stable Diffusion 1.5 image adapter (I0), pinned manifest and lockfile
   audio/               script detection, sentence segmentation, pronunciation rules (Hindi-aware)
   experiments/         experiment service, PRD §20 scoring, benchmark sets (audio-v1)
   services/            storage quota/preflight, assets, projects, system check, settings
@@ -183,3 +187,13 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Engine plumbing | Done: engines declaring `voice_cloning` receive the reference path, transcript and language for narration, chapters and previews |
 | Cloning engine | Chatterbox Multilingual runs on the M2 (CPU) with its built-in voice and with your own voice, PerTh watermark. English measured on 2026-11-20: cold load median 18.3 s, median real-time factor 6.7 (about 7× slower than real time), peak worker memory 6.27 GB, installed 4.25 GB. Devanagari deferred ([notes](docs/engines/chatterbox.md)) |
 | Listening tests | Ready for review: English `audio-v1`, English sentences with Mahabharata names (Chatterbox and Kokoro) and one cloned narration |
+
+## I0 status: image baseline (started early, ADR-0006)
+
+| Item | Status |
+| --- | --- |
+| Engine | Stable Diffusion 1.5, diffusers on the Apple GPU (fp16), pinned files, hash-pinned lockfile, no safety checker (owner decision) |
+| Image Studio | Done (first version): description, Quick / Balanced / Detailed, and in Advanced mode Avoid, seed, steps and guidance; results show the image, seed and time |
+| Measurements (M2, 2026-11-20) | 6 of 6 completed; cold load 14.5 s; median 52.6 s per 512 × 512 image at 25 steps; GPU memory reserved 8.5 GB; installed 2.75 GB ([details](docs/engines/sd15.md)) |
+| Exit-gate checks | Saved outputs are reproducible (same seed gives an identical file); the engine unloads, and Kokoro narrated normally afterwards; no network use; prompts stay out of logs |
+| Still open | Quality review by eye; image experiments (§20.2 weights); a memory guard before image jobs |

@@ -48,7 +48,7 @@ backend/rasva/
   engines/indicf5/     IndicF5 draft adapter (manifest, layout and lockfile made on the Mac)
   engines/sd15/        Stable Diffusion 1.5 image adapter (I0), pinned manifest and lockfile
   audio/               script detection, sentence segmentation, pronunciation rules (Hindi-aware)
-  experiments/         experiment service, PRD §20 scoring, benchmark sets (audio-v1)
+  experiments/         experiment service, PRD §20 scoring, benchmark sets (audio-v1, image-v1)
   services/            storage quota/preflight, assets, projects, system check, settings
 frontend/src/          React + TS + Vite + Tailwind v4, shadcn-style components, Lucide
 docs/adr/              architecture decision records
@@ -196,4 +196,5 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Image Studio | Done (first version): description, Quick / Balanced / Detailed, and in Advanced mode Avoid, seed, steps and guidance; results show the image, seed and time |
 | Measurements (M2, 2026-11-20) | 6 of 6 completed; cold load 14.5 s; median 52.6 s per 512 × 512 image at 25 steps; GPU memory reserved 8.5 GB; installed 2.75 GB ([details](docs/engines/sd15.md)) |
 | Exit-gate checks | Saved outputs are reproducible (same seed gives an identical file); the engine unloads, and Kokoro narrated normally afterwards; no network use; prompts stay out of logs |
-| Still open | Quality review by eye; image experiments (§20.2 weights); a memory guard before image jobs |
+| Image experiments | Built, not yet run on the M2: `image.generate` in Experiments (Advanced mode) with the 15-prompt `image-v1` set (objects, scenes, styles, words in the picture, people and hands; fixed seed per prompt) or your own descriptions, a thumbnail grid with 1–5 reviews, PRD §20.2 weights and the PRD's six quality subdimensions, memory gate on process + GPU memory ([details](docs/engines/sd15.md#image-experiments)) |
+| Still open | Quality review by eye (run `image-v1`); a memory guard before image jobs |

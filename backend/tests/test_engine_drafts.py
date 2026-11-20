@@ -30,6 +30,7 @@ from rasva.engines.contract import (
 )
 from rasva.engines.registry import EngineRegistry
 from rasva.services.installer import resolve_lockfile
+from tests.conftest import make_client, set_host, set_pinned
 
 SHA = "b" * 64
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
@@ -446,10 +447,31 @@ def test_indicf5_new_reference_is_prepared_again(f5, tmp_path):
     assert engine._ref is None and engine._model is None
 
 
-def test_new_engines_are_registered_and_listed(client):
-    engines = {e["id"]: e for e in client.get("/api/v1/models").json()}
+def test_new_engines_are_registered_and_listed(settings, monkeypatch):
+    set_host(monkeypatch, apple_silicon=False)
+    with make_client(settings) as client:
+        engines = {e["id"]: e for e in client.get("/api/v1/models").json()}
     for engine_id in (C.ENGINE_ID, F.ENGINE_ID):
         assert engine_id in engines
-    # The test server is not an Apple Silicon Mac with pinned files: neither installs.
-    for engine_id in (C.ENGINE_ID, F.ENGINE_ID):
-        assert engines[engine_id]["compatibility"]["compatible"] is False
+        # Off Apple Silicon neither installs, whatever their manifests say.
+        compat = engines[engine_id]["compatibility"]
+        assert compat["compatible"] is False
+        assert any("Apple Silicon" in r for r in compat["reasons"])
+
+
+def test_chatterbox_not_installable_until_pinned(settings, monkeypatch):
+    set_host(monkeypatch, apple_silicon=True)
+    set_pinned(monkeypatch, C.ChatterboxEngine, pinned=False)
+    with make_client(settings) as client:
+        compat = client.get(f"/api/v1/models/{C.ENGINE_ID}").json()["compatibility"]
+        assert compat["compatible"] is False and "pinned" in compat["reasons"][0]
+        r = client.post(f"/api/v1/models/{C.ENGINE_ID}/install")
+        assert r.status_code == 409 and r.json()["error"]["code"] == "incompatible"
+
+
+def test_chatterbox_pinned_on_apple_silicon_is_installable(settings, monkeypatch):
+    set_host(monkeypatch, apple_silicon=True)
+    set_pinned(monkeypatch, C.ChatterboxEngine, pinned=True)
+    with make_client(settings) as client:
+        compat = client.get(f"/api/v1/models/{C.ENGINE_ID}").json()["compatibility"]
+        assert compat == {"compatible": True, "reasons": []}

@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 
 from rasva.app import create_app
 from rasva.config import Paths, Settings
+from rasva.engines.contract import ModelArtifact, SystemFacts
+from rasva.services import system_check
 
 BASE = "http://127.0.0.1:8765"
 
@@ -68,3 +70,33 @@ def wav_bytes(seconds: float = 0.1, rate: int = 8000) -> bytes:
             )
         )
     return buf.getvalue()
+
+
+FAKE_ARTIFACT = ModelArtifact(
+    path="weights.bin",
+    url="https://huggingface.co/example/model/resolve/0123456789abcdef0123456789abcdef01234567/weights.bin",
+    sha256="0" * 64,
+    size_bytes=1,
+)
+
+
+def set_host(monkeypatch: pytest.MonkeyPatch, *, apple_silicon: bool) -> None:
+    """Make compatibility checks independent of the machine running the tests."""
+    facts = SystemFacts(
+        os="macOS" if apple_silicon else "Linux",
+        arch="arm64" if apple_silicon else "x86_64",
+        total_memory_bytes=16 * 1024**3,
+        apple_silicon=apple_silicon,
+        mlx_available=False,
+        mps_available=False,
+    )
+    monkeypatch.setattr(system_check, "facts", lambda: facts)
+
+
+def set_pinned(monkeypatch: pytest.MonkeyPatch, engine_cls: type, *, pinned: bool) -> None:
+    """Pin or unpin an engine's download list, whatever its committed manifest says.
+    Call before creating the client: the registry copies descriptors at startup."""
+    artifacts = [FAKE_ARTIFACT] if pinned else []
+    monkeypatch.setattr(
+        engine_cls, "descriptor", engine_cls.descriptor.model_copy(update={"artifacts": artifacts})
+    )

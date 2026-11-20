@@ -1,9 +1,26 @@
 # Kokoro-82M (phase A1 baseline engine)
 
-Status: adapter, environment lockfile and UI are done. **Model files are not
-pinned yet** (see "Enable it"), so Kokoro shows on the Models page but cannot be
-installed. It has not yet been run on the target M2. The A1 measurements (load
-time, real-time factor, peak memory, disk) still need to be taken there.
+Status: installed and narrating on the target M2. The model files are pinned
+in `manifest.json`, and the A1 measurements are below.
+
+## Measurements on the M2 (A1-009, A1-011)
+
+Taken on 2026-11-20 on a MacBook with an M2 and 16 GB of memory. Kokoro 0.9.4
+(adapter 1.0) ran on PyTorch CPU, with the pinned model files. The data comes
+from the `audio-v1` experiment, run through the API after a fresh server
+restart. There were two candidates, `af_heart` (English) and `hf_alpha` (Hindi).
+
+| Measure | Result | How it was measured |
+| --- | --- | --- |
+| Runs | 85 completed, 0 failed, 35 skipped, 0 truncated segments | The 35 skips are expected: they are the Devanagari cases (Hindi, mixed and names) given to the English voice, which refuses Devanagari by design |
+| Model load (cold) | 17.3 s | One sample: the first job after the restart, including starting the worker and importing torch and spaCy. Warm jobs load nothing |
+| Real-time factor | median 0.200 (range 0.185 to 0.239) | Generation time ÷ audio length, so lower is faster: about 5× faster than real time. The highest value is the cold first job. The median is the same with the 15 Roman Hinglish cases left out (0.200 over 55 runs) |
+| Peak memory | 2.16 GB (2,160,263,168 bytes) | The engine worker's lifetime high-water mark (`ru_maxrss`), excluding the Rasva server process. It rose from 1.42 GB after the first job |
+| Installed size | 1.03 GB (1,033,326,592 bytes) | Disk blocks measured by the installer: model files about 333 MB, plus Kokoro's Python environment. After the first runs, Python bytecode caches add about 60 MB. uv's download cache (683 MB, under `cache/uv`) is not included |
+
+All the cases in this experiment are single sentences (79 used one segment and
+6 used two), so long-form throughput is not covered here. Listening scores are
+not part of these numbers: A1-012 needs a person to review the audio.
 
 ## Enable it
 
@@ -13,8 +30,8 @@ time, real-time factor, peak memory, disk) still need to be taken there.
    one commit and lists each file's SHA-256 and size. Commit the file.
 3. On the Mac, go to Models, then Kokoro, then Install. The installer downloads
    about 350 MB of weights and verifies every file. It then builds Kokoro's own
-   Python 3.12 environment from `requirements.lock` (installed size estimated
-   at about 1.6 GB; the real size is measured and shown after install).
+   Python 3.12 environment from `requirements.lock`. The measured installed size
+   on the M2 is 1.03 GB.
 
 ## Decisions
 

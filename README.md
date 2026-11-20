@@ -6,9 +6,8 @@ to cloud services. Requirements are in the PRD in Confluence. Key design
 decisions are recorded in [`docs/adr`](docs/adr).
 
 **Current phase:** A1, Lightweight Narration Baseline. The A0 platform is done.
-The Kokoro engine and Audio Studio are built, but Kokoro's model files still
-need pinning before it can be installed; see
-[docs/engines/kokoro.md](docs/engines/kokoro.md). A built-in diagnostic engine
+The Kokoro engine and Audio Studio are built, and Kokoro is pinned, installed
+and measured on the M2; see [docs/engines/kokoro.md](docs/engines/kokoro.md). A built-in diagnostic engine
 exercises the full pipeline: queue → worker → progress → saved file → playback.
 
 ## Run it
@@ -117,15 +116,15 @@ engine package. Generate it with
 
 | Item | Status |
 | --- | --- |
-| A1-001 small TTS adapter | Done: Kokoro (PyTorch CPU), isolated Python 3.12 env, local-files-only. **Model manifest not pinned yet** |
+| A1-001 small TTS adapter | Done: Kokoro (PyTorch CPU), isolated Python 3.12 env, local-files-only, model files pinned |
 | A1-002 script editor | Done: autosave per project, Devanagari detection, length limit |
 | A1-003 voice picker | Done: voices by language (English / Hindi) |
 | A1-004 synthesis endpoint | Done: `audio.narrate` jobs; preview = first sentence |
 | A1-005 output saving · A1-006 player · A1-007 WAV download | Done |
 | A1-008 history | Done for each project's results; versioning/compare comes with A4 |
-| A1-009 runtime and memory measurement | Metrics recorded per job (RTF, load time, peak RSS); **not yet measured on the M2** |
+| A1-009 runtime and memory measurement | Done: measured on the M2 (2026-11-20): cold load 17.3 s, median real-time factor 0.200 (about 5× faster than real time), peak worker memory 2.16 GB, installed 1.03 GB ([details](docs/engines/kokoro.md#measurements-on-the-m2-a1-009-a1-011)) |
 | A1-010 experiment records | Done: fixed inputs x candidates, metrics, 1-5 reviews, PRD §20 weights and gates, decisions |
-| A1-011 benchmark | Done: 60-sentence `audio-v1` set (PRD §29.2); **needs running on the M2 with Kokoro** |
+| A1-011 benchmark | Done: 60-sentence `audio-v1` set (PRD §29.2), run on the M2 with Kokoro (`af_heart` and `hf_alpha`): 85 completed, 0 failed, 35 expected skips. The set still has 15 Roman Hinglish cases, which are out of scope under ADR-0005 |
 | A1-012 acceptance review | Needs the M2 |
 
 ## A2 status (started early; engine-independent parts)

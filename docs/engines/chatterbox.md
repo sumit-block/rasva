@@ -17,11 +17,11 @@ Devanagari will be measured later.
 | Measure | Result | How it was measured |
 | --- | --- | --- |
 | Runs | 10 English `audio-v1` cases and 10 English sentences with Mahabharata names: 20 completed, 0 failed | The names sentences were a separate custom experiment, compared against Kokoro `af_heart` |
-| Model load (cold) | 19.5 s and 28.1 s | Two cold starts of the worker. Each includes starting the worker and loading three sub-models on CPU |
-| Real-time factor | median 6.71 on the `audio-v1` English cases (range 6.17 to 7.33); median 6.70 on the names sentences | Generation time ÷ audio length, so this is about 7× **slower** than real time. Kokoro's is 0.20. The 15 Roman Hinglish cases (out of scope) also ran, at a median of 6.73 |
-| Peak memory | 5.49 GB (5,490,393,088 bytes) | The engine worker's lifetime high-water mark (`ru_maxrss`) on CPU, excluding the Rasva server process |
+| Model load (cold) | median 18.3 s (range 16.4 to 28.1 s, 12 cold starts) | Each includes starting the worker and loading three sub-models on CPU. The names experiment alternated engines, so the worker restarted often |
+| Real-time factor | median 6.71 on the `audio-v1` English cases (range 6.17 to 7.33); median 6.69 on the names sentences | Generation time ÷ audio length, so this is about 7× **slower** than real time. Kokoro's is 0.20. The 15 Roman Hinglish cases (out of scope) also ran, at a median of 6.73 |
+| Peak memory | 6.27 GB in the app (6,265,618,432 bytes, highest over 43 jobs); 7.02 GB in a standalone CPU test | The engine worker's lifetime high-water mark (`ru_maxrss`) on CPU, excluding the Rasva server process. The standalone figure is from `/usr/bin/time -l` on a scratch run of the same adapter that narrated four short texts |
 | Installed size | 4.25 GB (4,247,867,392 bytes) | Disk blocks measured by the installer: model files 3.21 GB, plus the Python 3.11 environment |
-| Network use | none | A load-and-generate run with every socket blocked made 0 attempts (after the segmenter fix below) |
+| Network use | none with the built-in voice | A load-and-generate run (English and Devanagari) with every socket blocked made 0 attempts, after the segmenter fix below. The cloning path (`prepare_conditionals`) was not run under that guard |
 | Cloned voice | runs: 10.8 s of English audio from a consented 11.6 s recording, real-time factor 6.53, marked `cloned` and `synthetic`, PerTh watermark | The recording passed the quality check except for one "a bit quiet" warning. Similarity has not been judged by ear yet |
 
 What to listen for: some clips are much longer than their text needs. For
@@ -62,6 +62,10 @@ long tails. These clips may have trailing noise or babble.
 - Listening review: English quality, the long-clip problem above,
   how Mahabharata names are pronounced, and cloned-voice similarity.
 - Whether the presets need tuning for this voice and for Hindi.
+- Pronunciation entries for English do not apply to a cloned voice whose
+  recording is labelled Hindi: entries are chosen by the voice's language, and a
+  cloned voice takes its language from the recording. Entries set to "any"
+  language do apply.
 
 ## Watermark and licences
 

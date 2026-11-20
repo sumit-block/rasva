@@ -181,5 +181,5 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Transcript | Done: entered and confirmed by you; plausibility check against the speech length (no speech recognition yet) |
 | Reusable profiles, deletion | Done: deleting a voice deletes its recording immediately; refused while jobs use it |
 | Engine plumbing | Done: engines declaring `voice_cloning` receive the reference path, transcript and language for narration, chapters and previews |
-| Cloning engine | Chatterbox Multilingual runs on the M2 (CPU) with its built-in voice and with your own voice, PerTh watermark. English measured on 2026-11-20: cold load 19.5–28.1 s, median real-time factor 6.7 (about 7× slower than real time), peak worker memory 5.49 GB, installed 4.25 GB. Devanagari deferred ([notes](docs/engines/chatterbox.md)) |
+| Cloning engine | Chatterbox Multilingual runs on the M2 (CPU) with its built-in voice and with your own voice, PerTh watermark. English measured on 2026-11-20: cold load median 18.3 s, median real-time factor 6.7 (about 7× slower than real time), peak worker memory 6.27 GB, installed 4.25 GB. Devanagari deferred ([notes](docs/engines/chatterbox.md)) |
 | Listening tests | Ready for review: English `audio-v1`, English sentences with Mahabharata names (Chatterbox and Kokoro) and one cloned narration |

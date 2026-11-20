@@ -195,6 +195,16 @@ class Engine(ABC):
     def install(self, ctx: InstallContext) -> None:  # noqa: B027 - optional hook
         """Download and convert weights. Must be resumable and checksum-verified."""
 
+    def prepare(self, ctx: InstallContext) -> None:  # noqa: B027 - optional hook
+        """One-time conversion of downloaded weights (e.g. quantising), run by the
+        installer after the download and environment build, before ``verify``.
+
+        Runs in the engine's own environment, in a separate process, with network
+        access blocked (``rasva.engines.prepare``). Must be idempotent and write its
+        results atomically (temp folder, then rename), so a cancelled or failed run
+        leaves nothing half-written and a reinstall can resume.
+        """
+
     def verify(self, ctx: InstallContext) -> bool:
         return True
 
@@ -216,3 +226,11 @@ class Engine(ABC):
 
     def unload(self) -> None:  # noqa: B027 - optional hook
         """Release memory. The worker process exits afterwards regardless."""
+
+
+def prepare_owner(cls: type[Engine]) -> type[Engine] | None:
+    """The class that defines ``prepare`` for ``cls``, or None if it has no prepare step."""
+    for klass in cls.__mro__:
+        if "prepare" in vars(klass):
+            return None if klass is Engine else klass
+    return None

@@ -60,7 +60,8 @@ Decision:
   Rasva is local-first: blocking would make an engine unusable offline until
   the user could update. Running is not silent: the orchestrator logs a
   warning when it starts a worker on an outdated environment. If that engine
-  then fails to load, the job's error adds "A software update is available
+  then fails to start (a load error, or a worker that exits before it is
+  ready), the job's error adds "A software update is available
   for this engine. Open Models and choose Update, then retry."
 
 Limit: an engine's `verify` may check only its model files (Chatterbox's

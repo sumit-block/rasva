@@ -48,6 +48,10 @@ def setup_logging(log_dir: Path, level: int = logging.INFO) -> None:
     console._rasva = True  # type: ignore[attr-defined]
     root.addHandler(file_handler)
     root.addHandler(console)
+    # httpx logs every request URL at INFO. Download redirects carry signed, expiring
+    # URLs; keep them (and the noise) out of the logs. Failures are logged by Rasva.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 ENGINE_LOG_MAX_BYTES = 5 * 1024 * 1024

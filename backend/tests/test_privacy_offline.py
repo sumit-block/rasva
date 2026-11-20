@@ -137,3 +137,13 @@ def test_frontend_bundle_loads_nothing_from_the_internet():
         assert not re.search(r"(fetch|import|EventSource|WebSocket)\(\s*[\"'`]https?://", text), (
             js.name
         )
+
+
+def test_download_urls_are_not_logged(tmp_path):
+    import logging
+
+    from rasva.logging_setup import setup_logging
+
+    setup_logging(tmp_path)
+    for name in ("httpx", "httpcore"):
+        assert not logging.getLogger(name).isEnabledFor(logging.INFO)

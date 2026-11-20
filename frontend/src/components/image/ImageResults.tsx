@@ -19,7 +19,14 @@ const output = (j: Job) => j.outputs[0] ?? "";
  * Image results grouped as versions (PRD phase I4). Running jobs show as job
  * rows with progress; finished ones join their image's version strip.
  */
-export function ImageResults({ projectId, jobs }: { projectId: string; jobs: Job[] }) {
+export function ImageResults({ projectId, jobs: given }: { projectId: string; jobs: Job[] }) {
+  // The page may pass only one task's jobs; follow every image task (generate, edit, …).
+  const { jobs: liveAll } = useJobs();
+  const jobs = useMemo(() => {
+    const byId = new Map(given.map((j) => [j.id, j]));
+    for (const j of liveAll) if (j.project_id === projectId && j.task.startsWith("image.")) byId.set(j.id, j);
+    return [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [given, liveAll, projectId]);
   const [groups, setGroups] = useState<ImageGroup[]>([]);
   const [error, setError] = useState<string>();
   // Refetch whenever a job of this project appears or changes state.

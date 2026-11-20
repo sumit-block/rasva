@@ -158,10 +158,14 @@ def test_migration_backfills_existing_images(tmp_path, monkeypatch):
     now = db_mod.utcnow()
     conn.execute("INSERT INTO projects(id, name, module, created_at, updated_at)"
                  " VALUES ('prj_1', 'P', 'image', ?, ?)", (now, now))  # fmt: skip
-    for jid, task in (("job_aaa", "image.generate"), ("job_bbb", "audio.narrate")):
+    jobs = (
+        ("job_aaa", "prj_1", "image.generate"),
+        ("job_bbb", "prj_1", "audio.narrate"),
+    )
+    for jid, project, task in jobs:
         conn.execute("INSERT INTO jobs(id, project_id, task, engine_id, state, created_at,"
-                     " updated_at) VALUES (?, 'prj_1', ?, 'e', 'completed', ?, ?)",
-                     (jid, task, now, now))  # fmt: skip
+                     " updated_at) VALUES (?, ?, ?, 'e', 'completed', ?, ?)",
+                     (jid, project, task, now, now))  # fmt: skip
     monkeypatch.setattr(db_mod, "_available_migrations", lambda: every)
     assert db_mod.migrate(conn, tmp_path / "backups") >= 9
     rows = conn.execute("SELECT job_id, group_id FROM image_versions").fetchall()
@@ -272,7 +276,7 @@ def test_interrupted_image_job_retries_with_same_seed(settings, monkeypatch):
 # ------------------------------------------------------------------ low-memory mode
 
 
-def test_low_memory_mode_reaches_engines_that_support_it(c, pid):
+def test_low_memory_mode_reaches_engines_that_support_it(c, pid, settings):
     first = generate(c, pid)
     assert "low_memory" not in first["inputs"]
     assert c.patch(f"{API}/settings", json={"image.low_memory": True}).status_code == 200
@@ -280,10 +284,17 @@ def test_low_memory_mode_reaches_engines_that_support_it(c, pid):
     assert second["inputs"]["low_memory"] is True and second["metrics"]["low_memory"] is True
     meta = c.get(f"{API}/assets/{second['outputs'][0]}").json()["metadata"]
     assert meta["low_memory"] is True
-    # Retry reads the current setting, so turning it off applies to the retry.
+    # "Again" and Retry read the current setting, not the old job's.
     c.patch(f"{API}/settings", json={"image.low_memory": False})
-    conn_job = c.post(f"{API}/jobs/{second['id']}/again", json={"seed": "same"}).json()
-    assert "low_memory" not in conn_job["inputs"]
+    off = c.post(f"{API}/jobs/{second['id']}/again", json={"seed": "same"}).json()
+    assert "low_memory" not in off["inputs"]
+    conn = connect(settings.paths.db_file)
+    conn.execute("UPDATE jobs SET state = 'failed' WHERE id = ?", (first["id"],))
+    conn.close()
+    c.patch(f"{API}/settings", json={"image.low_memory": True})
+    retry = c.post(f"{API}/jobs/{first['id']}/retry")
+    assert retry.status_code == 201 and retry.json()["inputs"]["low_memory"] is True
+    assert retry.json()["inputs"]["seed"] == first["inputs"]["seed"]
     assert c.patch(f"{API}/settings", json={"image.low_memory": "yes"}).status_code == 422
 
 

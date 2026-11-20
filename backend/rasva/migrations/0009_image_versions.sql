@@ -27,10 +27,11 @@ CREATE TABLE image_versions (
 CREATE INDEX image_versions_group ON image_versions (group_id, created_at);
 
 -- Existing images (phase I0) each become a group of one, so cleanup never treats
--- them as older versions of something else.
+-- them as older versions of something else. Jobs with no project (experiments)
+-- are not versions of anything and are skipped.
 INSERT INTO image_groups (id, project_id, task, request_key, favourite_job_id, created_at, updated_at)
     SELECT 'imgg_' || substr(id, 5), project_id, task, NULL, NULL, created_at, updated_at
-    FROM jobs WHERE task LIKE 'image.%';
+    FROM jobs WHERE task LIKE 'image.%' AND project_id IS NOT NULL;
 
 INSERT INTO image_versions (job_id, group_id, created_at)
-    SELECT id, 'imgg_' || substr(id, 5), created_at FROM jobs WHERE task LIKE 'image.%'
+    SELECT id, 'imgg_' || substr(id, 5), created_at FROM jobs WHERE task LIKE 'image.%' AND project_id IS NOT NULL

@@ -16,16 +16,21 @@ export function commentText(details: Record<string, string>): string {
     .slice(0, MAX_COMMENT);
 }
 
-/** Insert a COM segment right after SOI (FF D8). */
+/** Insert a COM segment after SOI and any leading APPn segments (JFIF wants APP0 first). */
 export function withComment(jpeg: Uint8Array, text: string): Uint8Array {
   if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error("Not a JPEG file.");
-  const body = new TextEncoder().encode(text);
+  let at = 2;
+  while (at + 4 <= jpeg.length && jpeg[at] === 0xff && (jpeg[at + 1] ?? 0) >= 0xe0 && (jpeg[at + 1] ?? 0) <= 0xef) {
+    at += 2 + (((jpeg[at + 2] ?? 0) << 8) | (jpeg[at + 3] ?? 0));
+  }
+  if (at > jpeg.length) throw new Error("The JPEG file is damaged.");
+  const body = new TextEncoder().encode(text).subarray(0, 65533);
   const len = body.length + 2;
   const out = new Uint8Array(jpeg.length + 2 + len);
-  out.set(jpeg.subarray(0, 2), 0);
-  out.set([0xff, 0xfe, len >> 8, len & 0xff], 2);
-  out.set(body, 6);
-  out.set(jpeg.subarray(2), 6 + body.length);
+  out.set(jpeg.subarray(0, at), 0);
+  out.set([0xff, 0xfe, len >> 8, len & 0xff], at);
+  out.set(body, at + 4);
+  out.set(jpeg.subarray(at), at + 4 + body.length);
   return out;
 }
 

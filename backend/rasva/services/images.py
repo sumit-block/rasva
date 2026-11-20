@@ -97,8 +97,8 @@ def assign(
     conn: sqlite3.Connection, job: dict[str, Any], version_of: str | None = None
 ) -> str | None:
     """Record ``job`` as a version. Returns its group id (None for non-image jobs)."""
-    if not is_image_task(job["task"]):
-        return None
+    if not is_image_task(job["task"]) or not job.get("project_id"):
+        return None  # experiment runs have no project and are not versions
     now = utcnow()
     with transaction(conn):
         group_id = None

@@ -93,7 +93,8 @@ class StableDiffusion15Engine(Engine):
         source_url=f"https://huggingface.co/{REPO_ID}",
         approx_download_bytes=_WEIGHTS,
         approx_installed_bytes=_WEIGHTS + _ENV_ESTIMATE,
-        approx_peak_memory_bytes=5 * 1024**3,
+        # Measured on the M2: 8.5 GB of GPU memory reserved (fp16, MPS) + 0.5 GB process.
+        approx_peak_memory_bytes=9 * 1024**3,
         artifacts=_ARTIFACTS,
         requirements_lock="requirements.lock",
         python_version="3.12",

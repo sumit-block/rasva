@@ -197,6 +197,8 @@ export const api = {
   updateProject: (id: string, body: Partial<Pick<Project, "name" | "status" | "description" | "settings">>) =>
     request<Project>(`/projects/${id}`, { method: "PATCH", body: json(body) }),
   jobs: () => request<Job[]>("/jobs?limit=100"),
+  projectJobs: (projectId: string, limit = 200) =>
+    request<Job[]>(`/jobs?project_id=${encodeURIComponent(projectId)}&limit=${limit}`),
   createJob: (body: { project_id: string; task: string; engine_id?: string; inputs?: object }) =>
     request<Job>("/jobs", { method: "POST", body: json(body) }),
   cancelJob: (id: string) => request<Job>(`/jobs/${id}/cancel`, { method: "POST" }),

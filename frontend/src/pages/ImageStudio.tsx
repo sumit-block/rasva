@@ -1,5 +1,5 @@
 import { ImageIcon, Plus, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { JobRow } from "@/components/JobRow";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -9,7 +9,7 @@ import { EmptyState, Notice } from "@/components/ui/notice";
 import { useAsync } from "@/hooks/useAsync";
 import { useJobs } from "@/hooks/useJobs";
 import { usePrefs } from "@/hooks/usePrefs";
-import { api, isUsable, type EngineInfo, type Project } from "@/lib/api";
+import { api, isUsable, type EngineInfo, type Job, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const TASK = "image.generate";
@@ -64,10 +64,24 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     }
   };
 
-  const results = useMemo(
-    () => jobs.filter((j) => j.task === TASK && j.project_id === projectId),
-    [jobs, projectId],
-  );
+  // The live list holds only recent jobs of every kind; load this project's own
+  // history so older images stay visible, and let live updates win.
+  const [history, setHistory] = useState<Job[]>([]);
+  useEffect(() => {
+    if (!projectId) return setHistory([]);
+    let alive = true;
+    api.projectJobs(projectId).then((js) => alive && setHistory(js), () => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
+  const results = useMemo(() => {
+    const byId = new Map(history.map((j) => [j.id, j]));
+    for (const j of jobs) if (j.project_id === projectId) byId.set(j.id, j);
+    return [...byId.values()]
+      .filter((j) => j.task === TASK)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [history, jobs, projectId]);
 
   return (
     <>

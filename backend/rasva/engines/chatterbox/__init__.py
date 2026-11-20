@@ -1,7 +1,7 @@
 """Chatterbox Multilingual voice engine (phase A3 candidate, PRD §14).
 
-Draft adapter, written against chatterbox-tts 0.1.7's source and not yet run on
-the target Mac. What it relies on (read from the package):
+Runs on the target M2 (CPU by default; see docs/engines/chatterbox.md for the
+measurements and the three first-run fixes). What it relies on:
 
 - ``ChatterboxMultilingualTTS.from_local(ckpt_dir, device)`` loads ve.pt,
   t3_mtl23ls_v2.safetensors, s3gen.pt, grapheme_mtl_merged_expanded_v1.json and
@@ -94,17 +94,18 @@ class ChatterboxEngine(Engine):
         tasks=["audio.narrate"],
         languages=["Hindi", "English"],
         features=["voice_cloning", "preset_voices", "preview", "expressiveness"],
-        license="MIT (code and model weights, per Resemble AI; recheck when pinning)",
+        license="MIT (code and model weights)",
         license_class="permissive",
         license_notes=[
             "Every clip carries Resemble AI's inaudible PerTh watermark, which marks it as "
             "AI-generated. Rasva also labels it synthetic.",
-            "Draft adapter: not yet run on an M2 Mac. Speed and memory are unmeasured.",
+            "Slow on an M2 MacBook Air: about 7 seconds of work for each second of speech, "
+            "using up to about 6 GB of memory.",
         ],
         source_url=f"https://huggingface.co/{REPO_ID}",
         approx_download_bytes=_WEIGHTS,
         approx_installed_bytes=_WEIGHTS + _ENV_ESTIMATE,
-        approx_peak_memory_bytes=5 * 1024**3,
+        approx_peak_memory_bytes=6 * 1024**3,  # measured 6.27 GB on the M2 (CPU)
         artifacts=_ARTIFACTS,
         requirements_lock="requirements.lock",
         python_version="3.11",

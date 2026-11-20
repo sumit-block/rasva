@@ -5,3 +5,7 @@
 chatterbox-tts==0.1.7
 # Needed by the Rasva worker protocol (rasva.engines.contract).
 pydantic>=2.7,<3
+# resemble-perth (the PerTh watermarker) imports pkg_resources but does not declare
+# setuptools; without it the watermarker is silently None and loading fails.
+# setuptools 81+ no longer ships pkg_resources.
+setuptools<81

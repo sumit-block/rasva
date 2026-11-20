@@ -171,6 +171,8 @@ def cb(monkeypatch):
     for name, mod in rt.modules.items():
         monkeypatch.setitem(sys.modules, name, mod)
     monkeypatch.setitem(sys.modules, "torch", fake_torch())
+    # load() marks spacy_pkuseg missing; register it so the change is undone after each test.
+    monkeypatch.setitem(sys.modules, "spacy_pkuseg", types.ModuleType("spacy_pkuseg"))
     monkeypatch.delenv("RASVA_TORCH_DEVICE", raising=False)
     return rt
 
@@ -222,15 +224,33 @@ def test_chatterbox_validation(tmp_path):
     assert own["voice_id"] == "own" and own["reference"]["language"] == "hi"
 
 
-def test_chatterbox_loads_locally_and_falls_back_to_cpu(cb, tmp_path, monkeypatch):
+def test_chatterbox_loads_locally_on_cpu_by_default(cb, tmp_path):
     engine = cb_loaded(tmp_path)
-    assert cb.loads == [(tmp_path / "model", "mps")] and engine.device == "mps"
+    assert cb.loads == [(tmp_path / "model", "cpu")] and engine.device == "cpu"
+
+
+def test_chatterbox_mps_is_opt_in_and_falls_back_to_cpu(cb, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RASVA_TORCH_DEVICE", "mps")
+    engine = cb_loaded(tmp_path)
+    assert cb.loads[-1] == (tmp_path / "model", "mps") and engine.device == "mps"
 
     rt = FakeChatterbox(fail_device="mps")
     for name, mod in rt.modules.items():
         monkeypatch.setitem(sys.modules, name, mod)
     engine = cb_loaded(tmp_path)
     assert [d for _, d in rt.loads] == ["mps", "cpu"] and engine.device == "cpu"
+    assert "unsupported op on this device" in capsys.readouterr().err  # reason is logged
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch(mps=False))
+    assert cb_loaded(tmp_path).device == "cpu"  # no MPS on this machine: CPU directly
+
+
+def test_chatterbox_load_disables_the_downloading_chinese_segmenter(cb, tmp_path):
+    # pkuseg would download its model from GitHub into ~/.pkuseg at load time.
+    cb_loaded(tmp_path)
+    assert sys.modules["spacy_pkuseg"] is None
+    with pytest.raises(ImportError):
+        from spacy_pkuseg import pkuseg  # noqa: F401
 
 
 def test_chatterbox_language_per_sentence_and_wav(cb, tmp_path):
@@ -246,7 +266,7 @@ def test_chatterbox_language_per_sentence_and_wav(cb, tmp_path):
     meta = result.outputs[0].metadata
     assert meta["synthetic"] and meta["watermark"] == "perth" and not meta["cloned"]
     assert len(meta["segments"]) == 3 and progress[-1][0] == 1.0
-    assert result.metrics["device"] == "mps"
+    assert result.metrics["device"] == "cpu"
 
 
 def test_chatterbox_reuses_voice_conditioning(cb, tmp_path):
@@ -279,6 +299,10 @@ def test_chatterbox_lockfile_is_hashed_and_matches_its_package():
     assert re.search(r"^chatterbox-tts==0\.1\.7 ", text, re.M)
     assert re.search(r"^torch==2\.6\.0 ", text, re.M)
     assert re.search(r"^pydantic==2\.", text, re.M)
+    # resemble-perth imports pkg_resources (setuptools < 81) without declaring it;
+    # without it the watermarker is None and Chatterbox cannot load.
+    m = re.search(r"^setuptools==(\d+)\.", text, re.M)
+    assert m and int(m.group(1)) < 81
     assert "git+" not in text  # wheels from PyPI only
 
 

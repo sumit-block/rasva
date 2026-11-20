@@ -20,7 +20,9 @@ installable. Module import must stay light (no torch here).
 from __future__ import annotations
 
 import os
+import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -175,19 +177,26 @@ class ChatterboxEngine(Engine):
 
     def load(self, ctx: RuntimeContext) -> None:
         _quiet_library_logs()
+        _block_chinese_segmenter()
         import torch
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-        preferred = os.environ.get("RASVA_TORCH_DEVICE") or (
-            "mps" if torch.backends.mps.is_available() else "cpu"
-        )
+        # CPU by default: on the M2 (2026-11-20) the Apple GPU (MPS) was no faster and
+        # far less consistent, and its memory use is invisible to the RSS metric.
+        # RASVA_TORCH_DEVICE=mps opts in.
+        preferred = os.environ.get("RASVA_TORCH_DEVICE") or "cpu"
+        if preferred == "mps" and not torch.backends.mps.is_available():
+            preferred = "cpu"
         try:
             self._model = ChatterboxMultilingualTTS.from_local(ctx.model_dir, preferred)
             self.device = preferred
         except Exception:
             if preferred == "cpu":
                 raise
-            # The Apple GPU path is newer; fall back to the CPU rather than fail.
+            # The Apple GPU path is newer; fall back to the CPU rather than fail, but
+            # keep the reason in the engine log (it may not be about the device at all).
+            traceback.print_exc()
+            print(f"Chatterbox: loading on {preferred} failed; retrying on cpu", file=sys.stderr)
             self._model = ChatterboxMultilingualTTS.from_local(ctx.model_dir, "cpu")
             self.device = "cpu"
         self._builtin_conds = self._model.conds
@@ -252,6 +261,14 @@ class ChatterboxEngine(Engine):
     def unload(self) -> None:
         self._model = None
         self._builtin_conds = None
+
+
+def _block_chinese_segmenter() -> None:
+    """Chatterbox's tokenizer builds a Chinese word segmenter (spacy_pkuseg) on every
+    load, and pkuseg downloads its model (~34 MB, unpinned, unverified) from GitHub
+    into ~/.pkuseg. Rasva only sends English and Hindi, so mark the module missing:
+    the tokenizer catches the ImportError and skips Chinese segmentation."""
+    sys.modules["spacy_pkuseg"] = None  # type: ignore[assignment]
 
 
 def _quiet_library_logs() -> None:

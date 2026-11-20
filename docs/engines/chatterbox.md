@@ -14,7 +14,7 @@ been measured on the M2.
    `s3gen.pt`, `grapheme_mtl_merged_expanded_v1.json`, `conds.pt`). Recheck the
    licence on the model card at that commit. Commit the file.
 3. On the Mac: Models → Chatterbox → Install. The Python 3.11 environment comes
-   from `requirements.lock` (110 wheels, all with hashes).
+   from `requirements.lock` (111 wheels, all with hashes).
 4. Run the A3 checks below before relying on it.
 
 ## Decisions
@@ -23,7 +23,9 @@ been measured on the M2.
 | --- | --- |
 | `chatterbox-tts==0.1.7`, its exact pins (torch 2.6.0, transformers 5.2.0, numpy 1.26.4) | The package pins these itself; the lock follows them. |
 | `ChatterboxMultilingualTTS.from_local(dir, device)` | Loads only the five local files. `from_pretrained` would call the Hub. The worker also runs with `HF_HUB_OFFLINE=1`. |
-| Apple GPU (MPS) first, CPU fallback | If loading on MPS raises, it reloads on CPU instead of failing. Override with `RASVA_TORCH_DEVICE=cpu`. Which is faster on the M2 is unmeasured. |
+| CPU by default; Apple GPU (MPS) opt-in | Measured on the M2 on 2026-11-20 with the same two-sentence texts, three runs each. English took 27–46 s on CPU and 32–51 s on MPS. Hindi took 50–86 s on CPU and 65–166 s on MPS. MPS was no faster and much less consistent, and the RSS metric does not count its GPU memory. Set `RASVA_TORCH_DEVICE=mps` to try it. If loading on MPS fails, the engine logs the reason and reloads on CPU. |
+| `setuptools<81` in the lockfile | `resemble-perth` (the watermarker) imports `pkg_resources` without declaring setuptools. Without it, the watermarker is silently `None` and loading fails with `'NoneType' object is not callable`. |
+| Chinese word segmenter disabled | On every load, Chatterbox's tokenizer creates a `spacy_pkuseg` segmenter, which downloads a 34 MB model from GitHub into `~/.pkuseg`. That download is unpinned, unverified and outside the managed folder, and `HF_HUB_OFFLINE` does not stop it. Rasva sends only `en` and `hi`, so the adapter marks the module as missing, and the tokenizer skips Chinese segmentation. A load-and-generate run with every network call blocked made no connection attempts. |
 | Language per sentence | A sentence with any Devanagari is sent as `hi`, otherwise `en`, so mixed scripts read with the right front end. Roman Hinglish is read as English. |
 | Voice conditioning cached | `prepare_conditionals` runs once per (recording, expressiveness), not per sentence or job. Switching back to a built-in voice restores the built-in conditioning. |
 | No speed control | Chatterbox has none; the speed slider is hidden. Pacing comes from the presets (`cfg_weight`). |
@@ -31,11 +33,8 @@ been measured on the M2.
 
 ## What is not known yet (check on the Mac)
 
-- Whether `from_local` with `t3_mtl23ls_v2.safetensors` loads as written (read from
-  0.1.7's source, not run).
 - Hindi quality, cloned-voice similarity, speed, peak memory (estimated 5 GB) and
   installed size (estimated 2.2 GB plus weights).
-- Whether MPS works for all three sub-models.
 
 ## Watermark and licences
 

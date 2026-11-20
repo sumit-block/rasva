@@ -1,10 +1,12 @@
 # Inputs for the pose finder (DWPose, ONNX) engine environment (ADR-0003, phase I2).
 # NOT LOCKED YET: generate requirements.lock only after the owner confirms the
 # licences in docs/engines/pose-control.md. From backend/rasva/engines/pose/:
-#   uv pip compile requirements.in --generate-hashes --only-binary :all: \
+#   MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements.in --generate-hashes --only-binary :all: \
 #     --python-version 3.12 --python-platform aarch64-apple-darwin \
 #     --no-header --no-annotate -o requirements.lock
-# Then check every line has --hash, and pin the model files with
+# (onnxruntime 1.32 publishes macOS arm64 wheels for macOS 14+ only; without the
+# deployment target uv assumes macOS 13 and finds no wheel. Dry-run 2026-11-20:
+# resolves to 11 packages, no torch.) Then check every line has --hash, and pin the model files with
 #   python3 scripts/pin_engine.py dwpose
 # No torch, OpenCV, mmcv or controlnet_aux: onnxruntime runs the two ONNX files.
 onnxruntime==1.32.0

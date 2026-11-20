@@ -353,7 +353,13 @@ class EnvironmentBuilder:
             and marker.read_text().strip() == sha256_file(lock)
         )
 
-    async def build(self, engine_id: str, lock: Path, cancel: asyncio.Event) -> None:
+    async def build(
+        self,
+        engine_id: str,
+        lock: Path,
+        cancel: asyncio.Event,
+        python_version: str | None = None,
+    ) -> None:
         if self.is_current(engine_id, lock):
             return
         uv = self.uv()
@@ -363,17 +369,20 @@ class EnvironmentBuilder:
         env = {**os.environ, **self._paths.worker_env()}
         for key in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
             env.pop(key, None)
+        # Interpreters uv downloads stay inside the managed root (counted as environments).
+        env["UV_PYTHON_INSTALL_DIR"] = str(self._paths.envs / ".python")
         log_path = self._paths.logs / "engines" / f"{engine_id}-install.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         try:
+            python = python_version or sys.executable
             await self._run(
-                [uv, "venv", "--relocatable", "--python", sys.executable, str(work)],
+                [uv, "venv", "--relocatable", "--python", python, str(work)],
                 env, log_path, cancel,
             )  # fmt: skip
             await self._run(
                 [
                     uv, "pip", "install", "--python", str(work / "bin" / "python"),
-                    "--require-hashes", "--no-config", "-r", str(lock),
+                    "--require-hashes", "--only-binary", ":all:", "--no-config", "-r", str(lock),
                 ],
                 env, log_path, cancel,
             )  # fmt: skip
@@ -518,7 +527,9 @@ class Installer:
             hooks.transition(JobState.PREPARING, "Setting up engine software")
             env_started = time.perf_counter()
             if d.requirements_lock:
-                await self._envs.build(d.id, resolve_lockfile(engine), hooks.cancel)
+                await self._envs.build(
+                    d.id, resolve_lockfile(engine), hooks.cancel, d.python_version
+                )
             env_s = time.perf_counter() - env_started
 
             hooks.transition(JobState.PROCESSING, "Checking the installation")

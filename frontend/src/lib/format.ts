@@ -40,6 +40,7 @@ export const STATE_LABEL: Record<JobState, string> = {
 
 export const TASK_LABEL: Record<string, string> = {
   "diagnostic.tone": "Pipeline check",
+  "audio.narrate": "Narration",
   "model.install": "Install engine",
   "model.remove": "Remove engine",
 };

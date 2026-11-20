@@ -98,6 +98,14 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
         )}
       </dl>
 
+      {model.voices.length > 0 && (
+        <p className="mt-3 text-xs text-muted">
+          {model.voices.length} voices · {[...new Set(model.voices.map((v) => (v.language === "hi" ? "Hindi" : "English")))].join(", ")}
+        </p>
+      )}
+      {model.license_notes.map((note) => (
+        <p key={note} className="mt-2 text-xs text-muted">{note}</p>
+      ))}
       {!model.compatibility.compatible && (
         <Notice tone="error" className="mt-3">{model.compatibility.reasons.join(" ")}</Notice>
       )}

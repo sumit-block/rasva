@@ -5,9 +5,11 @@ reference-based image editing. All generation runs on your Mac; nothing is sent
 to cloud services. Requirements are in the PRD in Confluence. Key design
 decisions are recorded in [`docs/adr`](docs/adr).
 
-**Current phase:** A0, Shared Platform Foundation. There are no AI engines yet.
-A built-in diagnostic engine exercises the full pipeline: queue → worker →
-progress → saved file → playback.
+**Current phase:** A1, Lightweight Narration Baseline. The A0 platform is done.
+The Kokoro engine and Audio Studio are built, but Kokoro's model files still
+need pinning before it can be installed; see
+[docs/engines/kokoro.md](docs/engines/kokoro.md). A built-in diagnostic engine
+exercises the full pipeline: queue → worker → progress → saved file → playback.
 
 ## Run it
 
@@ -39,9 +41,13 @@ backend/rasva/
   api/                 /api/v1: system, projects, assets, jobs (+SSE), models, settings
   jobs/                state machine, durable repository, orchestrator, event bus
   engines/             adapter contract, registry, worker subprocess, built-in engines
+  engines/kokoro/      Kokoro adapter, pinned model manifest, macOS arm64 lockfile
+  audio/               script detection and sentence segmentation (Hindi-aware)
   services/            storage quota/preflight, assets, projects, system check, settings
 frontend/src/          React + TS + Vite + Tailwind v4, shadcn-style components, Lucide
 docs/adr/              architecture decision records
+docs/engines/          per-engine decisions, limitations and licences
+scripts/pin_kokoro.py  pins Kokoro's model files (commit + SHA-256) into its manifest
 ```
 
 ## Architecture in one paragraph
@@ -103,3 +109,16 @@ engine package. Generate it with
   [ADR-0004](docs/adr/0004-lan-access-security.md); the decision is due at A5.
 - **Default macOS free-space reserve:** 15 GB is an assumption and can be
   changed in settings.
+
+## A1 status
+
+| Item | Status |
+| --- | --- |
+| A1-001 small TTS adapter | Done: Kokoro (PyTorch CPU), isolated Python 3.12 env, local-files-only. **Model manifest not pinned yet** |
+| A1-002 script editor | Done: autosave per project, Devanagari detection, length limit |
+| A1-003 voice picker | Done: voices by language (English / Hindi) |
+| A1-004 synthesis endpoint | Done: `audio.narrate` jobs; preview = first sentence |
+| A1-005 output saving · A1-006 player · A1-007 WAV download | Done |
+| A1-008 history | Done for each project's results; versioning/compare comes with A4 |
+| A1-009 runtime and memory measurement | Metrics recorded per job (RTF, load time, peak RSS); **not yet measured on the M2** |
+| A1-010 experiment records · A1-011 benchmark · A1-012 acceptance | Not started |

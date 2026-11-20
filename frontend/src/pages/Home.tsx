@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { useAsync } from "@/hooks/useAsync";
 import { useJobs } from "@/hooks/useJobs";
 import { runPipelineCheck } from "@/lib/actions";
-import { api } from "@/lib/api";
+import { api, isUsable } from "@/lib/api";
 import { formatBytes, timeAgo } from "@/lib/format";
 
 const CHECK_ICON = { pass: CheckCircle2, warn: AlertTriangle, fail: XCircle } as const;
@@ -20,6 +20,8 @@ export function HomePage() {
   const check = useAsync(api.check);
   const storage = useAsync(() => api.storage());
   const projects = useAsync(() => api.projects());
+  const models = useAsync(api.models);
+  const narrationReady = !!models.data?.some((m) => m.tasks.includes("audio.narrate") && isUsable(m));
   const { upsert } = useJobs();
   const navigate = useNavigate();
   const [running, setRunning] = useState(false);
@@ -54,12 +56,12 @@ export function HomePage() {
             <div className="flex-1">
               <CardTitle className="text-lg">Create narration</CardTitle>
               <CardDescription>
-                Turn a Hindi, English or Hinglish script into speech. This becomes available once the first voice
-                engine is installed.
+                Turn a Hindi, English or Hinglish script into speech.
+                {!narrationReady && " Install a voice engine from Models to begin."}
               </CardDescription>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button disabled aria-describedby="narration-soon">
-                  Create narration
+                <Button onClick={() => navigate(narrationReady ? "/audio" : "/models")} aria-describedby="narration-soon">
+                  {narrationReady ? "Create narration" : "Install a voice engine"}
                 </Button>
                 <Button variant="secondary" onClick={onCheck} disabled={running}>
                   <Play aria-hidden /> {running ? "Starting…" : "Run a quick system test"}

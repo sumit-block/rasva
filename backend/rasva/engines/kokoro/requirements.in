@@ -1,0 +1,14 @@
+# Inputs for the Kokoro engine environment (ADR-0003). Regenerate the lockfile with:
+#   uv pip compile requirements.in --generate-hashes --only-binary :all: \
+#     --python-version 3.12 --python-platform aarch64-apple-darwin \
+#     --no-header --no-annotate -o requirements.lock
+kokoro==0.9.4
+misaki[en]==0.9.4
+# kokoro 0.9.4 (April 2025) subclasses transformers' AlbertModel and was built
+# against 4.x; do not let the resolver pick a major version it was never run on.
+transformers>=4.40,<5
+# English G2P needs this spaCy model; pinned here so misaki never downloads it at runtime.
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
+# Needed by the Rasva worker protocol (rasva.engines.contract).
+pydantic>=2.7,<3
+numpy

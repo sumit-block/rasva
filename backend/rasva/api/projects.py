@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Form, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from rasva.api.deps import DB, State
+from rasva.api.errors import ApiError
 from rasva.services import assets as asset_svc
 from rasva.services import projects as svc
 
 router = APIRouter(tags=["projects"])
+
+MAX_SETTINGS_BYTES = 256 * 1024  # scripts up to A1's limit, with room to spare
 
 
 class ProjectCreate(BaseModel):
@@ -22,6 +26,8 @@ class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     status: Literal["active", "archived"] | None = None
+    # Merged into existing settings (e.g. the autosaved script draft).
+    settings: dict[str, Any] | None = None
 
 
 @router.post("/projects", status_code=201)
@@ -47,7 +53,12 @@ def get_project(project_id: str, conn: DB) -> dict[str, Any]:
 
 @router.patch("/projects/{project_id}")
 def update_project(project_id: str, body: ProjectUpdate, conn: DB) -> dict[str, Any]:
-    return svc.update(conn, project_id, **body.model_dump(exclude_none=True))
+    fields = body.model_dump(exclude_none=True)
+    if "settings" in fields:
+        if len(json.dumps(fields["settings"])) > MAX_SETTINGS_BYTES:
+            raise ApiError(413, "too_large", "Project settings are too large to save.")
+        fields["settings"] = {**svc.get(conn, project_id)["settings"], **fields["settings"]}
+    return svc.update(conn, project_id, **fields)
 
 
 @router.post("/projects/{project_id}/assets", status_code=201)

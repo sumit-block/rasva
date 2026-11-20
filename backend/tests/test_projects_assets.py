@@ -96,3 +96,12 @@ def test_settings_validation(client):
 def test_unknown_api_route_is_json_404(client):
     r = client.get("/api/v1/nope")
     assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"
+
+
+def test_project_settings_merge_for_autosave(client, project):
+    url = f"/api/v1/projects/{project['id']}"
+    client.patch(url, json={"settings": {"script": "पहला ड्राफ़्ट", "voice_id": "hf_alpha"}})
+    r = client.patch(url, json={"settings": {"script": "दूसरा ड्राफ़्ट"}})
+    assert r.json()["settings"] == {"script": "दूसरा ड्राफ़्ट", "voice_id": "hf_alpha"}
+    big = client.patch(url, json={"settings": {"script": "x" * 300_000}})
+    assert big.status_code == 413

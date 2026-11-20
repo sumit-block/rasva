@@ -10,7 +10,8 @@ import { LibraryPage } from "@/pages/Library";
 import { JobsPage } from "@/pages/Jobs";
 import { ModelsPage } from "@/pages/Models";
 import { SettingsPage } from "@/pages/Settings";
-import { AudioStudioPage, ExperimentsPage, ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
+import { AudioStudioPage } from "@/pages/AudioStudio";
+import { ExperimentsPage, ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
 
 document.documentElement.dataset.theme ??= "dark";
 

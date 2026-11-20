@@ -49,6 +49,7 @@ export interface Project {
   module: "audio" | "image";
   description: string;
   status: "active" | "archived";
+  settings: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -87,6 +88,14 @@ export interface Storage {
   planning_bands_gb: Record<string, number>;
 }
 
+export interface Voice {
+  id: string;
+  display_name: string;
+  language: "en" | "hi";
+  accent: string | null;
+  gender: "female" | "male" | null;
+}
+
 export interface EngineInfo {
   id: string;
   display_name: string;
@@ -108,6 +117,8 @@ export interface EngineInfo {
   needs_license_confirmation: boolean;
   active_job: Job | null;
   compatibility: { compatible: boolean; reasons: string[] };
+  voices: Voice[];
+  license_notes: string[];
 }
 
 export type AppSettings = {
@@ -176,7 +187,7 @@ export const api = {
   },
   createProject: (body: { name: string; module: "audio" | "image" }) =>
     request<Project>("/projects", { method: "POST", body: json(body) }),
-  updateProject: (id: string, body: Partial<Pick<Project, "name" | "status" | "description">>) =>
+  updateProject: (id: string, body: Partial<Pick<Project, "name" | "status" | "description" | "settings">>) =>
     request<Project>(`/projects/${id}`, { method: "PATCH", body: json(body) }),
   jobs: () => request<Job[]>("/jobs?limit=100"),
   createJob: (body: { project_id: string; task: string; engine_id?: string; inputs?: object }) =>
@@ -195,3 +206,5 @@ export const api = {
 
 export const assetUrl = (id: string, download = false) =>
   `${API}/assets/${id}/content${download ? "?download=true" : ""}`;
+
+export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

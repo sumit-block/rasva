@@ -1,28 +1,8 @@
-import { AudioLines, Compass, FlaskConical, Image as ImageIcon } from "lucide-react";
+import { Compass, FlaskConical, Image as ImageIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/notice";
-
-export function AudioStudioPage() {
-  const navigate = useNavigate();
-  return (
-    <>
-      <PageHeader title="Audio Studio" />
-      <EmptyState
-        icon={<AudioLines />}
-        title="Narration arrives with the first voice engine"
-        action={
-          <Button variant="secondary" onClick={() => navigate("/")}>
-            Go to the system test
-          </Button>
-        }
-      >
-        You'll write or paste a script, choose a voice, preview a sentence and generate the full narration here.
-      </EmptyState>
-    </>
-  );
-}
 
 export function ImageStudioPage() {
   return (

@@ -48,6 +48,16 @@ class ModelArtifact(BaseModel):
         return v
 
 
+class Voice(BaseModel):
+    """A preset voice an audio engine offers (PRD §9.3 voice cards)."""
+
+    id: str = Field(pattern=r"^[a-z0-9_]{1,64}$")
+    display_name: str
+    language: Literal["en", "hi"]
+    accent: str | None = None  # e.g. "American", "British"
+    gender: Literal["female", "male"] | None = None
+
+
 class EngineDescriptor(BaseModel):
     """Static capability metadata. Shown to users in plain language."""
 
@@ -73,6 +83,12 @@ class EngineDescriptor(BaseModel):
     # pinned versions and --hash lines. If set, the installer creates an
     # isolated venv at envs/<id>/ from it (ADR-0003).
     requirements_lock: str | None = None
+    # Python version for the isolated environment, e.g. "3.12" (uv fetches it if
+    # missing). None = same version as the Rasva app.
+    python_version: str | None = None
+    voices: list[Voice] = []
+    # Third-party components with licences users should know about (PRD §28).
+    license_notes: list[str] = []
 
 
 class CompatibilityReport(BaseModel):

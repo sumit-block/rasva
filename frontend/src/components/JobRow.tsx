@@ -41,8 +41,14 @@ export function JobRow({ job }: { job: Job }) {
             <Badge tone={tone(job)}>{STATE_LABEL[job.state]}</Badge>
           </div>
           <p className="mt-1 text-xs text-muted">
+            {job.task === "audio.narrate" && (
+              <>
+                {job.inputs.preview ? "Preview" : "Full narration"} · voice {String(job.inputs.voice_id)} ·{" "}
+              </>
+            )}
             Started {timeAgo(job.created_at)}
             {job.retry_of && " · retry"}
+            {typeof job.metrics.audio_s === "number" && ` · ${job.metrics.audio_s.toFixed(1)} s of audio`}
           </p>
         </div>
         <div className="flex gap-2">

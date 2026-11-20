@@ -1,9 +1,9 @@
 /** Calls for the I3 "Change outfit" flow. Kept apart from lib/api.ts so the
  * image phase branches merge cleanly. */
-import { API, type Asset, type Job } from "@/lib/api";
+import { API, uploadAsset, type Job, type PhotoRole } from "@/lib/api";
 
 export type GarmentType = "auto" | "top" | "bottom" | "full";
-export type ReferenceRole = "person" | "garment";
+export type ReferenceRole = Extract<PhotoRole, "person" | "garment">;
 
 export const GARMENT_TYPES: { id: GarmentType; label: string; hint: string }[] = [
   { id: "auto", label: "Whatever the garment is", hint: "Let the engine decide what to replace." },
@@ -51,15 +51,9 @@ export const changeOutfit = (projectId: string, body: OutfitRequest) =>
     body: JSON.stringify(body),
   });
 
-/** Upload a photo as a reference. The role is stored with it once I1's upload
- * accepts it; until then the server ignores the field. */
-export function uploadPhoto(projectId: string, file: File, role: ReferenceRole) {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("kind", "reference");
-  form.append("role", role);
-  return call<Asset>(`/projects/${projectId}/assets`, { method: "POST", body: form });
-}
+/** Upload a reference photo with its role (I1's upload). */
+export const uploadPhoto = (projectId: string, file: File, role: ReferenceRole) =>
+  uploadAsset(projectId, file, "reference", role);
 
 export const outfitWorkflow = (job: Job): OutfitWorkflow | null => {
   const w = job.inputs.workflow as OutfitWorkflow | undefined;

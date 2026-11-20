@@ -143,8 +143,8 @@ export function OutfitPanel({ projectId, ensureProject }: { projectId: string | 
     previous.current = projectId;
     if (!projectId) return setPhotos([]), setHistory([]);
     let alive = true;
-    projectAssets(projectId).then(
-      (all) => alive && setPhotos(all.filter((a) => a.kind !== "import" && IMAGE_TYPES.includes(a.media_type))),
+    projectAssets(projectId, "reference").then(
+      (all) => alive && setPhotos(all.filter((a) => IMAGE_TYPES.includes(a.media_type))),
       () => undefined,
     );
     api.projectJobs(projectId).then((js) => alive && setHistory(js), () => undefined);

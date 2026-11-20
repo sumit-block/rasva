@@ -100,7 +100,8 @@ Results table (one row per case and engine):
 ## Comparison: general editing vs a dedicated try-on model
 
 The recommended engine is general reference editing (see [outfit.md](outfit.md)).
-A dedicated try-on model is compared only if the owner decides its licence is
+Here "general editing" means FLUX.2 klein 4B on mflux (4-bit), the I1 engine. A
+dedicated try-on model is compared only if the owner decides its licence is
 acceptable for this test (most are non-commercial).
 
 - Run C1–C13 with both engines on the same photos and seeds.

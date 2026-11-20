@@ -1,9 +1,10 @@
-"""Phase I3 "Change outfit": request building, roles, text fallback, optional mask,
-plain-language validation, and a full run through the queue with a fake editor."""
+"""Phase I3 "Change outfit": request building, roles, text fallback, plain-language
+validation, and a full run through the queue with I1's fake image editor."""
 
 from __future__ import annotations
 
 import logging
+import sqlite3
 import struct
 import zlib
 from collections.abc import Iterator
@@ -14,8 +15,8 @@ from fastapi.testclient import TestClient
 from rasva.services import outfit
 from tests.conftest import make_client, wait_for
 
-EDITOR = "tests.fake_editor:FakeEditor"
-MASK_EDITOR = "tests.fake_editor:FakeMaskEditor"
+EDITOR = "tests.fake_image_editor:FakeImageEditor"
+EDITOR_ID = "test-image-editor"
 PID = "prj_1"
 
 
@@ -35,7 +36,7 @@ def asset(aid: str, *, project: str = PID, kind: str = "reference", media: str =
     return {"id": aid, "project_id": project, "kind": kind, "media_type": media}
 
 
-PERSON, GARMENT, MASK = asset("ast_person"), asset("ast_garment"), asset("ast_mask")
+PERSON, GARMENT = asset("ast_person"), asset("ast_garment")
 
 
 # ---------------------------------------------------------------- builder
@@ -59,7 +60,6 @@ def test_photo_request_orders_references_and_keeps_the_person():
         "keep_background": True,
         "person_asset_id": "ast_person",
         "garment_asset_id": "ast_garment",
-        "mask_asset_id": None,
     }
     assert p.inputs() == {"prompt": p.prompt, "references": p.references}
 
@@ -105,15 +105,6 @@ def test_background_can_change():
     assert p.workflow["keep_background"] is False
 
 
-def test_mask_is_optional_and_goes_last():
-    without = outfit.plan(project_id=PID, person=PERSON, garment=GARMENT)
-    assert all(r["role"] != "mask" for r in without.references)
-    with_mask = outfit.plan(project_id=PID, person=PERSON, garment=GARMENT, mask=MASK)
-    assert with_mask.references[-1] == {"asset_id": "ast_mask", "role": "mask"}
-    assert with_mask.workflow["mask_asset_id"] == "ast_mask"
-    assert with_mask.prompt == without.prompt  # the engine reads the mask, not the words
-
-
 def test_description_control_characters_are_removed():
     p = outfit.plan(project_id=PID, person=PERSON, description="red\x00 kurta​")
     assert "red kurta" in p.prompt
@@ -139,19 +130,15 @@ def test_description_control_characters_are_removed():
         ),
         (
             {"person": asset("ast_a", media="audio/wav"), "garment": GARMENT},
-            "The person photo must be a PNG, JPEG or WebP picture.",
+            "The person photo must be a PNG, JPEG or WebP photo added to this project.",
         ),
         (
-            {"person": asset("ast_t", kind="import", media="image/png"), "garment": GARMENT},
-            "The person photo must be a PNG, JPEG or WebP picture.",
+            {"person": asset("ast_t", kind="import"), "garment": GARMENT},
+            "The person photo must be a PNG, JPEG or WebP photo added to this project.",
         ),
         (
-            {"person": PERSON, "garment": GARMENT, "mask": asset("ast_m", media="image/jpeg")},
-            "The garment area must be a PNG picture",
-        ),
-        (
-            {"person": PERSON, "garment": GARMENT, "mask": GARMENT},
-            "The garment area must be its own picture",
+            {"person": asset("ast_o", kind="output"), "description": "a kurta"},
+            "The person photo must be a PNG, JPEG or WebP photo added to this project.",
         ),
         (
             {"person": PERSON, "garment": GARMENT, "garment_type": "hat"},
@@ -164,17 +151,12 @@ def test_validation_messages_are_plain(kwargs, message):
         outfit.plan(project_id=PID, **kwargs)
 
 
-def test_an_earlier_result_can_be_the_person():
-    p = outfit.plan(project_id=PID, person=asset("ast_out", kind="output"), description="a kurta")
-    assert p.references[0] == {"asset_id": "ast_out", "role": "person"}
-
-
 # ---------------------------------------------------------------- API
 
 
 @pytest.fixture
 def client(settings) -> Iterator[TestClient]:
-    with make_client(settings, extra_engines=(EDITOR, MASK_EDITOR)) as c:
+    with make_client(settings, extra_engines=(EDITOR,)) as c:
         yield c
 
 
@@ -185,11 +167,11 @@ def project(client: TestClient) -> dict:
     return r.json()
 
 
-def upload(client: TestClient, project_id: str, name: str = "p.png", data: bytes | None = None):
+def upload(client: TestClient, project_id: str, name: str = "p.png", role: str = "person"):
     r = client.post(
         f"/api/v1/projects/{project_id}/assets",
-        files={"file": (name, data or png(), "image/png")},
-        data={"kind": "reference"},
+        files={"file": (name, png(), "image/png")},
+        data={"kind": "reference", "role": role},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -200,10 +182,11 @@ def change(client: TestClient, project_id: str, **body):
 
 
 def test_garment_photo_job_runs_and_records_the_source(client, project):
-    person, garment = upload(client, project["id"]), upload(client, project["id"], "g.png")
+    person = upload(client, project["id"])
+    garment = upload(client, project["id"], "g.png", "garment")
     r = change(
-        client, project["id"], engine_id="test-editor", person_asset_id=person["id"],
-        garment_asset_id=garment["id"], garment_type="full", seed=7, preset="quick",
+        client, project["id"], engine_id=EDITOR_ID, person_asset_id=person["id"],
+        garment_asset_id=garment["id"], garment_type="full", seed=7,
     )  # fmt: skip
     assert r.status_code == 201, r.text
     job = r.json()
@@ -211,7 +194,7 @@ def test_garment_photo_job_runs_and_records_the_source(client, project):
     inputs = job["inputs"]
     assert [x["role"] for x in inputs["references"]] == ["person", "garment"]
     assert [x["asset_id"] for x in inputs["references"]] == [person["id"], garment["id"]]
-    assert inputs["seed"] == 7 and inputs["steps"] == 4 and inputs["preset"] == "quick"
+    assert inputs["seed"] == 7
     assert inputs["workflow"]["garment_source"] == "photo"
     assert inputs["workflow"]["garment_type"] == "full"
 
@@ -225,7 +208,7 @@ def test_garment_photo_job_runs_and_records_the_source(client, project):
 def test_text_fallback_job(client, project):
     person = upload(client, project["id"])
     r = change(
-        client, project["id"], engine_id="test-editor", person_asset_id=person["id"],
+        client, project["id"], engine_id=EDITOR_ID, person_asset_id=person["id"],
         garment_description="a white cotton kurta with full sleeves",
     )  # fmt: skip
     assert r.status_code == 201, r.text
@@ -233,32 +216,46 @@ def test_text_fallback_job(client, project):
     assert [x["role"] for x in inputs["references"]] == ["person"]
     assert inputs["workflow"]["garment_source"] == "text"
     assert "white cotton kurta" in inputs["prompt"]
-    assert isinstance(inputs["seed"], int)  # chosen once, stored for retries
+    assert isinstance(inputs["seed"], int)
 
 
 def test_picks_an_installed_editor_by_default(client, project):
     person = upload(client, project["id"])
     r = change(client, project["id"], person_asset_id=person["id"], garment_description="a shirt")
     assert r.status_code == 201, r.text
-    assert r.json()["engine_id"] in {"test-editor", "test-mask-editor"}
+    assert r.json()["engine_id"] == EDITOR_ID
 
 
-def test_mask_needs_an_engine_that_reads_it(client, project):
-    person, garment = upload(client, project["id"]), upload(client, project["id"], "g.png")
-    mask = upload(client, project["id"], "area.png", png((255, 255, 255)))
-    body = {
-        "person_asset_id": person["id"],
-        "garment_asset_id": garment["id"],
-        "mask_asset_id": mask["id"],
-    }
-    r = change(client, project["id"], engine_id="test-editor", **body)
-    assert r.status_code == 422
-    assert r.json()["error"]["code"] == "mask_unsupported"
-    assert "Remove the marked area" in r.json()["error"]["message"]
+def test_roles_come_from_the_request_not_the_upload(client, project):
+    # Uploaded with the "wrong" stored roles: the outfit flow's order and roles win.
+    person = upload(client, project["id"], role="garment")
+    garment = upload(client, project["id"], "g.png", role="person")
+    r = change(
+        client, project["id"], engine_id=EDITOR_ID, person_asset_id=person["id"],
+        garment_asset_id=garment["id"],
+    )  # fmt: skip
+    refs = r.json()["inputs"]["references"]
+    assert [(x["asset_id"], x["role"]) for x in refs] == [
+        (person["id"], "person"),
+        (garment["id"], "garment"),
+    ]
 
-    r = change(client, project["id"], engine_id="test-mask-editor", **body)
-    assert r.status_code == 201, r.text
-    assert [x["role"] for x in r.json()["inputs"]["references"]] == ["person", "garment", "mask"]
+
+def test_retry_keeps_the_workflow_record(client, project, settings):
+    person = upload(client, project["id"])
+    r = change(
+        client, project["id"], engine_id=EDITOR_ID, person_asset_id=person["id"],
+        garment_description="a green kurta", seed=5,
+    )  # fmt: skip
+    job = wait_for(client, r.json()["id"], {"completed", "failed"})
+    with sqlite3.connect(settings.paths.db_file) as db:  # make it retryable
+        db.execute("UPDATE jobs SET state = 'failed' WHERE id = ?", (job["id"],))
+    retry = client.post(f"/api/v1/jobs/{job['id']}/retry")
+    assert retry.status_code == 201, retry.text
+    inputs = retry.json()["inputs"]
+    assert inputs["workflow"] == job["inputs"]["workflow"]
+    assert inputs["workflow"]["garment_source"] == "text"
+    assert inputs["prompt"] == job["inputs"]["prompt"] and inputs["seed"] == 5
 
 
 def test_assets_from_another_project_are_refused(client, project):
@@ -270,14 +267,14 @@ def test_assets_from_another_project_are_refused(client, project):
         {"person_asset_id": mine["id"], "garment_asset_id": theirs["id"]},
         {"person_asset_id": mine["id"], "garment_asset_id": "ast_missing"},
     ):
-        r = change(client, project["id"], engine_id="test-editor", **body)
+        r = change(client, project["id"], engine_id=EDITOR_ID, **body)
         assert r.status_code == 422, r.text
         assert "is not in this project" in r.json()["error"]["message"]
 
 
 def test_plain_errors(client, project):
     person = upload(client, project["id"])
-    r = change(client, project["id"], engine_id="test-editor", person_asset_id=person["id"])
+    r = change(client, project["id"], engine_id=EDITOR_ID, person_asset_id=person["id"])
     assert r.status_code == 422
     assert r.json()["error"]["message"] == "Add a photo of the garment, or describe it in words."
     r = change(client, project["id"], engine_id="sd15", person_asset_id=person["id"])
@@ -289,10 +286,10 @@ def test_plain_errors(client, project):
     assert r.status_code == 422
     assert r.json()["error"]["message"] == "That engine cannot change outfits."
     r = change(
-        client, project["id"], engine_id="test-editor", person_asset_id=person["id"],
-        garment_description="a shirt", preset="ultra",
+        client, project["id"], engine_id=EDITOR_ID, person_asset_id=person["id"],
+        garment_description="a shirt", preset="balanced",
     )  # fmt: skip
-    assert r.json()["error"]["code"] == "invalid_preset"
+    assert r.json()["error"]["code"] == "invalid_preset"  # the test editor has no presets
     r = client.post("/api/v1/projects/prj_nope/outfit", json={"person_asset_id": person["id"]})
     assert r.status_code == 404
 
@@ -314,7 +311,7 @@ def test_description_stays_out_of_logs(client, project, caplog):
     person = upload(client, project["id"])
     secret = "a very particular zebra-striped wedding sherwani"
     r = change(
-        client, project["id"], engine_id="test-editor", person_asset_id=person["id"],
+        client, project["id"], engine_id=EDITOR_ID, person_asset_id=person["id"],
         garment_description=secret,
     )  # fmt: skip
     wait_for(client, r.json()["id"], {"completed", "failed"})

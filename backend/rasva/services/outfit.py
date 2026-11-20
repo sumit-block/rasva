@@ -8,9 +8,10 @@ rather than a dedicated try-on model.
 
 Rules kept here, in one place:
 
-- Reference order is fixed: the person is image 1, the garment photo image 2,
-  and an optional garment-area mask comes last. The instruction refers to the
-  images by that order.
+- Reference order is fixed: the person is image 1 and the garment photo image 2.
+  The editing engine (FLUX.2 klein on mflux) receives the photos in that order,
+  and the instruction names them by it. No garment mask: klein works out the
+  garment area itself (docs/engines/outfit.md).
 - The instruction always asks the engine to keep face, identity, hair, skin
   tone, body shape, hands and pose. The wording is a first draft: it has not
   been tried on a real model yet (docs/engines/outfit-test-plan.md).
@@ -30,7 +31,7 @@ WORKFLOW = "outfit"
 INSTRUCTION_VERSION = 1
 MAX_DESCRIPTION_CHARS = 300
 MIN_DESCRIPTION_CHARS = 3
-USABLE_KINDS = ("reference", "output")  # an earlier result can be the next person photo
+USABLE_KINDS = ("reference",)  # same rule as services/references.py
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp")
 
 # Garment type -> how the instruction names it, and what else to leave alone.
@@ -85,7 +86,7 @@ def check_photo(asset: dict[str, Any] | None, project_id: str, what: str) -> dic
         # Same message for "missing" and "another project's": don't confirm it exists.
         raise OutfitError(f"The {what} is not in this project. Add it here first.")
     if asset.get("kind") not in USABLE_KINDS or asset.get("media_type") not in IMAGE_TYPES:
-        raise OutfitError(f"The {what} must be a PNG, JPEG or WebP picture.")
+        raise OutfitError(f"The {what} must be a PNG, JPEG or WebP photo added to this project.")
     return asset
 
 
@@ -97,11 +98,10 @@ def plan(
     description: str | None = None,
     garment_type: str = "auto",
     keep_background: bool = True,
-    mask: dict[str, Any] | None = None,
 ) -> OutfitPlan:
     """Check the choices and build the instruction and references.
 
-    ``person``, ``garment`` and ``mask`` are asset rows (or None). Raise
+    ``person`` and ``garment`` are asset rows (or None). Raise
     OutfitError with a message a non-technical user can act on.
     """
     if person is None:
@@ -121,20 +121,12 @@ def plan(
         garment = check_photo(garment, project_id, "garment photo")
         if garment["id"] == person["id"]:
             raise OutfitError("Choose a different photo for the garment than for the person.")
-    if mask is not None:
-        mask = check_photo(mask, project_id, "garment area")
-        if mask["media_type"] != "image/png":
-            raise OutfitError("The garment area must be a PNG picture (white = change).")
-        if mask["id"] in {person["id"], garment["id"] if garment else None}:
-            raise OutfitError("The garment area must be its own picture, not one of the photos.")
     if garment_type not in GARMENT_TYPES:
         raise OutfitError("Choose what to change: the top, the bottom, or the whole outfit.")
 
     references = [{"asset_id": person["id"], "role": "person"}]
     if garment is not None:
         references.append({"asset_id": garment["id"], "role": "garment"})
-    if mask is not None:
-        references.append({"asset_id": mask["id"], "role": "mask"})
 
     source = "photo_and_text" if garment is not None and text else "photo" if garment else "text"
     prompt = instruction(
@@ -148,7 +140,6 @@ def plan(
         "keep_background": keep_background,
         "person_asset_id": person["id"],
         "garment_asset_id": garment["id"] if garment else None,
-        "mask_asset_id": mask["id"] if mask else None,
     }
     return OutfitPlan(prompt=prompt, references=references, workflow=workflow)
 

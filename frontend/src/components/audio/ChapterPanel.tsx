@@ -13,13 +13,45 @@ const STATUS: Record<SegmentStatus, { label: string; tone: "neutral" | "accent" 
   generating: { label: "Generating", tone: "accent" },
   failed: { label: "Failed", tone: "danger" },
   ready: { label: "Ready", tone: "success" },
-  outdated: { label: "Voice changed", tone: "warning" },
+  outdated: { label: "Changed since generated", tone: "warning" },
   needs_review: { label: "New version", tone: "warning" },
 };
 const ATTENTION = new Set<SegmentStatus>(["failed", "needs_review", "outdated", "pending"]);
 const PAGE = 40;
+const LANGUAGE_NAME = { en: "English", hi: "Hindi" } as const;
 
-function SegmentRow({ seg, onChange, onError }: { seg: Segment; onChange: (c: Chapter) => void; onError: (m: string) => void }) {
+function LanguageChoice({ seg, perSentence, busy, onPick }: {
+  seg: Segment;
+  perSentence: boolean;
+  busy: boolean;
+  onPick: (language: "en" | "hi" | null) => void;
+}) {
+  const id = `language-${seg.id}`;
+  const automatic = !perSentence
+    ? "Automatic"
+    : seg.reads_as === "mixed"
+      ? "Automatic (each part by its script)"
+      : `Automatic (${LANGUAGE_NAME[seg.reads_as]})`;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <label htmlFor={id} className="text-xs text-muted">Read as</label>
+      <select id={id} disabled={busy} value={seg.language_override ?? ""}
+        onChange={(e) => onPick((e.target.value || null) as "en" | "hi" | null)}
+        className="min-h-9 rounded-lg border border-border bg-bg px-2 text-xs">
+        <option value="">{automatic}</option>
+        <option value="en">English</option>
+        <option value="hi">Hindi</option>
+      </select>
+    </span>
+  );
+}
+
+function SegmentRow({ seg, perSentence, onChange, onError }: {
+  seg: Segment;
+  perSentence: boolean;
+  onChange: (c: Chapter) => void;
+  onError: (m: string) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const latest = seg.takes[seg.takes.length - 1];
   const act = async (fn: () => Promise<Chapter>) => {
@@ -50,7 +82,15 @@ function SegmentRow({ seg, onChange, onError }: { seg: Segment; onChange: (c: Ch
                 <RotateCcw aria-hidden /> Regenerate
               </Button>
             )}
+            <LanguageChoice seg={seg} perSentence={perSentence} busy={busy || seg.status === "generating"}
+              onPick={(language) => act(() => chapters.setLanguage(seg.id, language))} />
           </div>
+          {seg.language_override && !perSentence && (
+            <p className="mt-1 text-xs text-muted">
+              Saved as {LANGUAGE_NAME[seg.language_override]}. This voice reads everything in one language,
+              so your choice is used only with voices that speak both English and Hindi.
+            </p>
+          )}
           {seg.status === "needs_review" && seg.current && latest?.asset_id && (
             <div className="mt-2 grid gap-2 rounded-lg border border-warning/40 p-2 sm:grid-cols-2">
               <div>
@@ -117,7 +157,7 @@ export function ChapterPanel({ chapter, onChange }: { chapter: Chapter; onChange
         )}
         {(counts.outdated ?? 0) > 0 && generating === 0 && (
           <Button size="sm" variant="secondary" onClick={() => act(() => chapters.generate(chapter.id, "needed"))}>
-            Update {counts.outdated} for the new voice
+            Update {counts.outdated} changed
           </Button>
         )}
       </div>
@@ -136,7 +176,7 @@ export function ChapterPanel({ chapter, onChange }: { chapter: Chapter; onChange
       </div>
       <ul className="mt-2 divide-y divide-border">
         {segments.slice(0, shown).map((s) => (
-          <SegmentRow key={s.id} seg={s} onChange={onChange} onError={setError} />
+          <SegmentRow key={s.id} seg={s} perSentence={chapter.language_per_sentence} onChange={onChange} onError={setError} />
         ))}
       </ul>
       {segments.length === 0 && <p className="py-4 text-sm text-muted">Nothing needs attention.</p>}

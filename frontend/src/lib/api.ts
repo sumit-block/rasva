@@ -389,6 +389,10 @@ export interface Segment {
   current: Take | null;
   takes: Take[];
   status: SegmentStatus;
+  /** The user's choice when detection is wrong; null = automatic. */
+  language_override: "en" | "hi" | null;
+  /** What an engine that speaks both reads it as ("mixed": its sentences differ). */
+  reads_as: "en" | "hi" | "mixed";
 }
 
 export interface MixTrack {
@@ -421,6 +425,8 @@ export interface Chapter {
   script: string;
   settings: ChapterSettings;
   mix: { duck_db?: number };
+  /** The engine reads each sentence in its own language (and honours the user's choice). */
+  language_per_sentence: boolean;
   segments: Segment[];
   summary: { segments: number; counts: Partial<Record<SegmentStatus, number>>; duration_s: number; exportable: boolean };
   tracks: MixTrack[];
@@ -450,6 +456,8 @@ export const chapters = {
     request<Chapter>(`/chapters/${id}/generate`, { method: "POST", body: json({ scope }) }),
   cancel: (id: string) => request<Chapter>(`/chapters/${id}/cancel`, { method: "POST" }),
   regenerate: (segmentId: string) => request<Chapter>(`/segments/${segmentId}/regenerate`, { method: "POST" }),
+  setLanguage: (segmentId: string, language: "en" | "hi" | null) =>
+    request<Chapter>(`/segments/${segmentId}`, { method: "PATCH", body: json({ language }) }),
   useTake: (segmentId: string, takeId: string) =>
     request<Chapter>(`/segments/${segmentId}/takes/${takeId}/use`, { method: "POST" }),
   addTrack: (id: string, body: TrackInput) => request<Chapter>(`/chapters/${id}/tracks`, { method: "POST", body: json(body) }),

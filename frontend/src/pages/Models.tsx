@@ -116,7 +116,7 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
         <Notice className="mt-3">
           <p className="font-medium">Software update available</p>
           <p className="mt-1">
-            Rasva has a fixed set of software for this engine. Updating takes a few minutes and needs the
+            Rasva has updated software for this engine. Updating takes a few minutes and needs the
             internet. Your downloaded model files and projects are kept, and if the update doesn't work, the
             current version keeps working.
           </p>
@@ -190,6 +190,12 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
   );
 }
 
+/** The engine's open install/update/remove job if any, else its most recent one (list is newest-first). */
+function liveModelJob(jobs: Job[], engineId: string): Job | undefined {
+  const mine = jobs.filter((j) => j.engine_id === engineId && j.task.startsWith("model."));
+  return mine.find((j) => !TERMINAL_STATES.has(j.state)) ?? mine[0];
+}
+
 export function ModelsPage() {
   const models = useAsync(api.models);
   const { jobs } = useJobs();
@@ -219,7 +225,7 @@ export function ModelsPage() {
           <li key={m.id}>
             <ModelCard
               model={m}
-              liveJob={jobs.find((j) => j.engine_id === m.id && j.task.startsWith("model."))}
+              liveJob={liveModelJob(jobs, m.id)}
               onChanged={() => void models.reload()}
             />
           </li>

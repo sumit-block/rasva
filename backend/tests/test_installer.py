@@ -400,7 +400,10 @@ args = sys.argv[1:]
 if args[0] == "venv":
     target = pathlib.Path(args[-1])
     (target / "bin").mkdir(parents=True)
-    (target / "bin" / "python").write_text("fake")
+    # A real interpreter shim, so a worker can be started from this env.
+    shim = "#!/bin/sh" + chr(10) + 'exec {sys.executable} "$@"' + chr(10)
+    (target / "bin" / "python").write_text(shim)
+    (target / "bin" / "python").chmod(0o755)
 elif args[:2] == ["pip", "install"]:
     assert "--require-hashes" in args
     assert args[args.index("--only-binary") + 1] == ":all:"
@@ -625,6 +628,35 @@ def test_update_refused_while_engine_busy_or_not_installed(isettings, server, fa
         assert r.status_code == 409 and r.json()["error"]["code"] == "not_installed"
     finally:
         c2.__exit__(None, None, None)
+
+
+def test_jobs_on_outdated_engine_still_run_and_failures_point_to_update(isettings, server, fake_uv):
+    # Policy (ADR-0003): an outdated engine is not blocked. These test engines are
+    # defined at runtime, so a worker cannot import them and dies before "ready",
+    # the same way an engine fails when its outdated env cannot import it.
+    s, c, eid = _env_engine(isettings, server, fake_uv, "UpdRun")
+    try:
+        project = c.post("/api/v1/projects", json={"name": "p", "module": "audio"}).json()
+
+        def run_job() -> dict:
+            r = c.post(
+                "/api/v1/jobs",
+                json={"project_id": project["id"], "task": "test.installed", "engine_id": eid},
+            )
+            assert r.status_code == 201, r.text
+            return wait_for(c, r.json()["id"], TERMINAL, timeout=60)
+
+        current = run_job()
+        assert current["state"] == "failed" and current["error_code"] == "engine_crashed"
+        assert "Open Models" not in current["error_message"]
+
+        _make_outdated(s, eid)
+        outdated = run_job()
+        assert outdated["state"] == "failed" and outdated["error_code"] == "engine_crashed"
+        assert "software update is available" in outdated["error_message"]
+        assert "Open Models and choose Update" in outdated["error_message"]
+    finally:
+        c.__exit__(None, None, None)
 
 
 def test_restart_restores_environment_after_interrupted_swap(isettings, server, fake_uv):

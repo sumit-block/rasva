@@ -313,7 +313,9 @@ class Orchestrator:
                 self._finalize(job, staging, event.get("outputs") or [], metrics)
         except WorkerGone as exc:
             self._worker = None
-            self._handle_crash(job_id, exc.returncode)
+            # An engine that cannot even import in an outdated env dies before "ready".
+            outdated = self._installer.software_update_available(engine)
+            self._handle_crash(job_id, exc.returncode, outdated=outdated)
         except asyncio.CancelledError:
             self._mark_interrupted(job_id)
             raise
@@ -599,13 +601,12 @@ class Orchestrator:
                 error_message="Rasva Studio stopped while this was running. You can retry it.",
             )
 
-    def _handle_crash(self, job_id: str, returncode: int | None) -> None:
+    def _handle_crash(self, job_id: str, returncode: int | None, *, outdated: bool = False) -> None:
         log.error(
             "engine worker exited unexpectedly", extra={"job": job_id, "returncode": returncode}
         )
         killed = returncode is not None and returncode == -signal.SIGKILL
-        self._fail(
-            job_id,
-            "out_of_memory" if killed else "engine_crashed",
-            MSG_MEMORY_KILL if killed else MSG_CRASH,
-        )
+        message = MSG_MEMORY_KILL if killed else MSG_CRASH
+        if outdated and not killed:
+            message = f"{message} {MSG_SOFTWARE_UPDATE}"
+        self._fail(job_id, "out_of_memory" if killed else "engine_crashed", message)

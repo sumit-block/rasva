@@ -1,4 +1,4 @@
-import { Compass, FlaskConical, Image as ImageIcon } from "lucide-react";
+import { Compass, Image as ImageIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -11,17 +11,6 @@ export function ImageStudioPage() {
       <EmptyState icon={<ImageIcon />} title="Coming after the audio studio">
         Pose and outfit changes using your own authorised reference photos will be added once narration is complete
         and tested.
-      </EmptyState>
-    </>
-  );
-}
-
-export function ExperimentsPage() {
-  return (
-    <>
-      <PageHeader title="Experiments" />
-      <EmptyState icon={<FlaskConical />} title="No experiments yet">
-        Side-by-side engine comparisons on fixed inputs, with timing, memory and your ratings, will appear here.
       </EmptyState>
     </>
   );

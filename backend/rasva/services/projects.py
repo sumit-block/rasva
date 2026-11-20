@@ -20,14 +20,20 @@ def _row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def create(
-    conn: sqlite3.Connection, paths: Paths, *, name: str, module: str, description: str = ""
+    conn: sqlite3.Connection,
+    paths: Paths,
+    *,
+    name: str,
+    module: str,
+    description: str = "",
+    kind: str = "user",
 ) -> dict[str, Any]:
     project_id = new_id("prj")
     now = utcnow()
     conn.execute(
-        "INSERT INTO projects(id, name, module, description, created_at, updated_at)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (project_id, name.strip(), module, description, now, now),
+        "INSERT INTO projects(id, name, module, description, kind, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (project_id, name.strip(), module, description, kind, now, now),
     )
     for sub in ("references", "imports", "outputs"):
         (paths.project_dir(project_id) / sub).mkdir(parents=True, exist_ok=True)
@@ -48,9 +54,13 @@ def list_projects(
     status: str | None = "active",
     query: str | None = None,
     limit: int = 100,
+    kind: str | None = "user",
 ) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: list[Any] = []
+    if kind:
+        clauses.append("kind = ?")
+        params.append(kind)
     if module:
         clauses.append("module = ?")
         params.append(module)

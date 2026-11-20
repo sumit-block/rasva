@@ -53,17 +53,40 @@ def create(
     retry_of: str | None = None,
     queue: bool = True,
 ) -> dict[str, Any]:
+    with transaction(conn):
+        job_id = insert(
+            conn,
+            project_id=project_id,
+            task=task,
+            engine_id=engine_id,
+            inputs=inputs,
+            retry_of=retry_of,
+            queue=queue,
+        )
+    return get(conn, job_id)
+
+
+def insert(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str | None,
+    task: str,
+    engine_id: str,
+    inputs: dict[str, Any],
+    retry_of: str | None = None,
+    queue: bool = True,
+) -> str:
+    """Insert a job inside the caller's transaction. Returns the new job id."""
     job_id = new_id("job")
     now = utcnow()
     state = JobState.QUEUED if queue else JobState.DRAFT
-    with transaction(conn):
-        conn.execute(
-            "INSERT INTO jobs(id, project_id, task, engine_id, state, inputs, retry_of,"
-            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (job_id, project_id, task, engine_id, state, dumps(inputs), retry_of, now, now),
-        )
-        _event(conn, job_id, state, None)
-    return get(conn, job_id)
+    conn.execute(
+        "INSERT INTO jobs(id, project_id, task, engine_id, state, inputs, retry_of,"
+        " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (job_id, project_id, task, engine_id, state, dumps(inputs), retry_of, now, now),
+    )
+    _event(conn, job_id, state, None)
+    return job_id
 
 
 def get(conn: sqlite3.Connection, job_id: str) -> dict[str, Any]:

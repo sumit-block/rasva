@@ -30,6 +30,8 @@ _ABBREVIATIONS = {
     "no", "vol", "ch", "fig", "approx", "dept", "govt", "rs", "smt", "shri",
 }  # fmt: skip
 _SOFT_BREAKS = re.compile(r"(?<=[,;:—–])\s+")
+# Devanagari abbreviations written with a full stop (डॉ. = Dr., प्रो. = Prof.).
+_DEVANAGARI_ABBREVIATIONS = {"डॉ", "प्रो", "श्री", "श्रीमती", "सुश्री", "कु", "पं", "स्व", "ई", "सं"}
 
 
 @dataclass(frozen=True)
@@ -71,12 +73,19 @@ def normalize_whitespace(text: str) -> str:
 
 
 def _is_abbreviation(before: str) -> bool:
+    deva = re.search(r"([\u0900-\u097f]+)$", before)
+    if deva:
+        return deva.group(1) in _DEVANAGARI_ABBREVIATIONS
     word = re.search(r"([A-Za-z.]+)$", before)
     if not word:
         return False
-    token = word.group(1).rstrip(".").replace(".", "").lower()
-    # Single capital letters are initials ("A. P. J. Abdul Kalam").
-    return token in _ABBREVIATIONS or (len(token) == 1 and word.group(1)[0].isupper())
+    raw = word.group(1)
+    token = raw.replace(".", "").lower()
+    # Dotted forms ("p.m", "e.g", "U.S") are abbreviations; single capitals are
+    # initials ("A. P. J. Abdul Kalam").
+    return (
+        token in _ABBREVIATIONS or "." in raw.strip(".") or (len(token) == 1 and raw[0].isupper())
+    )
 
 
 def split_sentences(paragraph: str) -> list[str]:

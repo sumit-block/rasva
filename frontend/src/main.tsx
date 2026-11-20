@@ -11,7 +11,8 @@ import { JobsPage } from "@/pages/Jobs";
 import { ModelsPage } from "@/pages/Models";
 import { SettingsPage } from "@/pages/Settings";
 import { AudioStudioPage } from "@/pages/AudioStudio";
-import { ExperimentsPage, ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
+import { ExperimentsPage } from "@/pages/Experiments";
+import { ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
 
 document.documentElement.dataset.theme ??= "dark";
 
@@ -27,6 +28,7 @@ const router = createBrowserRouter([
       { path: "jobs", element: <JobsPage /> },
       { path: "models", element: <ModelsPage /> },
       { path: "experiments", element: <ExperimentsPage /> },
+      { path: "experiments/:id", element: <ExperimentsPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],

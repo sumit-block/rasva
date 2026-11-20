@@ -207,4 +207,106 @@ export const api = {
 export const assetUrl = (id: string, download = false) =>
   `${API}/assets/${id}/content${download ? "?download=true" : ""}`;
 
+export interface Benchmark {
+  id: string;
+  name: string;
+  description: string;
+  task: string;
+  cases: number;
+  categories: Record<string, number>;
+}
+
+export interface ExperimentCandidate {
+  key: string;
+  engine_id: string;
+  settings: Record<string, unknown>;
+}
+
+export interface ExperimentRun {
+  id: string;
+  case_id: string;
+  category: string;
+  text: string;
+  focus: string;
+  candidate_key: string;
+  engine_id: string;
+  status: JobState | "skipped" | null;
+  skip_reason: string | null;
+  error: string | null;
+  progress: number | null;
+  metrics: Record<string, unknown>;
+  output_asset_id: string | null;
+  scores: Record<string, number>;
+}
+
+export interface Gate {
+  id: string;
+  passed: boolean | null;
+  message: string;
+}
+
+export interface CandidateSummary {
+  key: string;
+  engine_id: string;
+  total: number;
+  completed: number;
+  failed: number;
+  pending: number;
+  skipped: number;
+  rated: number;
+  quality: number | null;
+  quality_by_dimension: Record<string, number>;
+  median_rtf: number | null;
+  median_load_s: number | null;
+  peak_memory_bytes: number | null;
+  installed_bytes: number;
+  reliability: number | null;
+  score_experiment: number | null;
+  score_final: number | null;
+  complete: boolean;
+  gates: Gate[];
+  eligible: boolean | null;
+}
+
+export interface ExperimentListItem {
+  id: string;
+  name: string;
+  objective: string;
+  benchmark: string | null;
+  status: "active" | "decided" | "archived";
+  decision: string | null;
+  candidates: ExperimentCandidate[];
+  runs: number;
+  completed: number;
+  rated: number;
+  created_at: string;
+}
+
+export interface Experiment extends Omit<ExperimentListItem, "runs" | "completed" | "rated"> {
+  usability: Record<string, number>;
+  review_dimensions: string[];
+  runs: ExperimentRun[];
+  summary: CandidateSummary[];
+}
+
+export const experiments = {
+  benchmarks: () => request<Benchmark[]>("/experiments/benchmarks"),
+  list: () => request<ExperimentListItem[]>("/experiments"),
+  get: (id: string) => request<Experiment>(`/experiments/${id}`),
+  create: (body: {
+    name: string;
+    objective?: string;
+    benchmark?: string;
+    texts?: string[];
+    candidates: { engine_id: string; settings: Record<string, unknown> }[];
+  }) => request<Experiment>("/experiments", { method: "POST", body: json(body) }),
+  score: (id: string, runId: string, scores: Record<string, number | null>) =>
+    request<Experiment>(`/experiments/${id}/runs/${runId}/scores`, { method: "PUT", body: json({ scores }) }),
+  usability: (id: string, candidate_key: string, score: number | null) =>
+    request<Experiment>(`/experiments/${id}/usability`, { method: "PUT", body: json({ candidate_key, score }) }),
+  decide: (id: string, decision: string) =>
+    request<Experiment>(`/experiments/${id}/decision`, { method: "POST", body: json({ decision }) }),
+  cancel: (id: string) => request<Experiment>(`/experiments/${id}/cancel`, { method: "POST" }),
+};
+
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

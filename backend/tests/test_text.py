@@ -58,3 +58,16 @@ def test_script_detection():
     # A stray acronym in a longer Hindi passage does not make it "mixed".
     assert detect_script("कुरुक्षेत्र में कृष्ण और अर्जुन का लंबा संवाद हुआ, NASA") == "devanagari"
     assert detect_script("123 ...") == "none"
+
+
+def test_dotted_and_devanagari_abbreviations():
+    assert split_sentences("Dr. Mehta comes at 4:45 p.m. on Friday. Bring the forms, e.g. ID.") == [
+        "Dr. Mehta comes at 4:45 p.m. on Friday.",
+        "Bring the forms, e.g. ID.",
+    ]
+    assert split_sentences("डॉ. शर्मा कल आएँगे। प्रो. वर्मा नहीं।") == [
+        "डॉ. शर्मा कल आएँगे।",
+        "प्रो. वर्मा नहीं।",
+    ]
+    # An ordinary word before a full stop still ends the sentence.
+    assert split_sentences("I am. You are.") == ["I am.", "You are."]

@@ -1,0 +1,368 @@
+{
+  "id": "audio-v1",
+  "name": "Audio benchmark v1",
+  "description": "60 fixed sentences from PRD §29.2: 15 Roman Hinglish, 15 Hindi (Devanagari), 10 English, 10 mixed-script and 10 pronunciation-sensitive names.",
+  "task": "audio.narrate",
+  "cases": [
+    {
+      "id": "hg01",
+      "category": "hinglish",
+      "text": "Aaj subah main market gaya aur wahan bahut bheed thi.",
+      "focus": "everyday sentence"
+    },
+    {
+      "id": "hg02",
+      "category": "hinglish",
+      "text": "Kya tum kal shaam ko free ho? Hum movie dekhne chalenge.",
+      "focus": "question, two sentences"
+    },
+    {
+      "id": "hg03",
+      "category": "hinglish",
+      "text": "Yeh kahani Mahabharat ke yuddh se pehle ki hai.",
+      "focus": "epic vocabulary in Roman script"
+    },
+    {
+      "id": "hg04",
+      "category": "hinglish",
+      "text": "Arjun ne apne guru Dronacharya ko pranaam kiya.",
+      "focus": "names in Roman script"
+    },
+    {
+      "id": "hg05",
+      "category": "hinglish",
+      "text": "Meeting 3:30 baje hai, please time pe aa jaana.",
+      "focus": "clock time"
+    },
+    {
+      "id": "hg06",
+      "category": "hinglish",
+      "text": "Maine 250 rupaye ka recharge karwaya.",
+      "focus": "number with currency word"
+    },
+    {
+      "id": "hg07",
+      "category": "hinglish",
+      "text": "Bhai, tension mat le, sab theek ho jayega.",
+      "focus": "colloquial, English loanword"
+    },
+    {
+      "id": "hg08",
+      "category": "hinglish",
+      "text": "Uski aankhon mein aansu the, par usne kuch nahi kaha.",
+      "focus": "emotional, comma pause"
+    },
+    {
+      "id": "hg09",
+      "category": "hinglish",
+      "text": "Train 15 minute late hai, isliye hum platform number 4 par wait kar rahe hain.",
+      "focus": "several numbers"
+    },
+    {
+      "id": "hg10",
+      "category": "hinglish",
+      "text": "Dadi ne kaha, \"Beta, sach bolna kabhi mat chhodna.\"",
+      "focus": "dialogue in double quotes"
+    },
+    {
+      "id": "hg11",
+      "category": "hinglish",
+      "text": "Office ka kaam khatam karke main seedha ghar aaunga.",
+      "focus": "long vowels (aa, oo)"
+    },
+    {
+      "id": "hg12",
+      "category": "hinglish",
+      "text": "Barish itni tez thi ki sadak par paani bhar gaya.",
+      "focus": "everyday narration"
+    },
+    {
+      "id": "hg13",
+      "category": "hinglish",
+      "text": "Kya aapne kabhi socha hai ki zindagi ka asli matlab kya hai?",
+      "focus": "reflective question"
+    },
+    {
+      "id": "hg14",
+      "category": "hinglish",
+      "text": "Bacchon ne school ke function mein ek sundar natak kiya.",
+      "focus": "doubled consonants"
+    },
+    {
+      "id": "hg15",
+      "category": "hinglish",
+      "text": "Woh dheere se muskuraaya aur bola, 'Chalo, shuru karte hain.'",
+      "focus": "dialogue in single quotes"
+    },
+    {
+      "id": "hi01",
+      "category": "hindi",
+      "text": "आज मौसम बहुत सुहावना है।",
+      "focus": "short declarative"
+    },
+    {
+      "id": "hi02",
+      "category": "hindi",
+      "text": "क्या आप मुझे रेलवे स्टेशन का रास्ता बता सकते हैं?",
+      "focus": "polite question"
+    },
+    {
+      "id": "hi03",
+      "category": "hindi",
+      "text": "राजा ने अपनी प्रजा की भलाई के लिए कई काम किए।",
+      "focus": "formal narration"
+    },
+    {
+      "id": "hi04",
+      "category": "hindi",
+      "text": "यह पुस्तक मैंने पिछले वर्ष पढ़ी थी।",
+      "focus": "retroflex flap ड़"
+    },
+    {
+      "id": "hi05",
+      "category": "hindi",
+      "text": "उसने धीरे से दरवाज़ा खोला और अंदर झाँका।",
+      "focus": "nukta ज़, chandrabindu"
+    },
+    {
+      "id": "hi06",
+      "category": "hindi",
+      "text": "हमारी ट्रेन सुबह ७ बजे चलेगी।",
+      "focus": "Devanagari numeral"
+    },
+    {
+      "id": "hi07",
+      "category": "hindi",
+      "text": "इस वस्तु का मूल्य ₹१,२५० है।",
+      "focus": "rupee sign, grouped Devanagari numerals"
+    },
+    {
+      "id": "hi08",
+      "category": "hindi",
+      "text": "१५ अगस्त १९४७ को भारत स्वतंत्र हुआ।",
+      "focus": "date with Devanagari numerals"
+    },
+    {
+      "id": "hi09",
+      "category": "hindi",
+      "text": "गुरु ने शिष्य से कहा, “धैर्य रखो, सफलता अवश्य मिलेगी।”",
+      "focus": "dialogue in curly quotes"
+    },
+    {
+      "id": "hi10",
+      "category": "hindi",
+      "text": "वन में चारों ओर सन्नाटा था; केवल पक्षियों की आवाज़ सुनाई दे रही थी।",
+      "focus": "semicolon, long sentence"
+    },
+    {
+      "id": "hi11",
+      "category": "hindi",
+      "text": "क्षमा कीजिए, मुझसे भूल हो गई।",
+      "focus": "conjunct क्ष"
+    },
+    {
+      "id": "hi12",
+      "category": "hindi",
+      "text": "उन्होंने ज्ञान और विज्ञान दोनों का अध्ययन किया।",
+      "focus": "conjunct ज्ञ"
+    },
+    {
+      "id": "hi13",
+      "category": "hindi",
+      "text": "माँ ने बच्चे को प्यार से गले लगाया।",
+      "focus": "nasalisation"
+    },
+    {
+      "id": "hi14",
+      "category": "hindi",
+      "text": "युद्ध समाप्त हुआ, परंतु किसी के मन में शांति नहीं थी॥",
+      "focus": "double danda"
+    },
+    {
+      "id": "hi15",
+      "category": "hindi",
+      "text": "डॉ. शर्मा कल सुबह १० बजे आएँगे।",
+      "focus": "abbreviation डॉ."
+    },
+    {
+      "id": "en01",
+      "category": "english",
+      "text": "The quick brown fox jumps over the lazy dog.",
+      "focus": "pangram baseline"
+    },
+    {
+      "id": "en02",
+      "category": "english",
+      "text": "Please read the instructions carefully before you begin.",
+      "focus": "plain instruction"
+    },
+    {
+      "id": "en03",
+      "category": "english",
+      "text": "On March 3rd, 2024, the temperature reached 41 degrees Celsius.",
+      "focus": "ordinal date, numbers"
+    },
+    {
+      "id": "en04",
+      "category": "english",
+      "text": "Dr. Mehta's appointment is at 4:45 p.m. on Friday.",
+      "focus": "abbreviations, clock time"
+    },
+    {
+      "id": "en05",
+      "category": "english",
+      "text": "Wait—did you hear that? Someone is at the door!",
+      "focus": "em dash, question, exclamation"
+    },
+    {
+      "id": "en06",
+      "category": "english",
+      "text": "She whispered, \"I'll be back before midnight.\"",
+      "focus": "dialogue, contraction"
+    },
+    {
+      "id": "en07",
+      "category": "english",
+      "text": "The NASA mission cost approximately $2.5 billion.",
+      "focus": "acronym, currency, decimal"
+    },
+    {
+      "id": "en08",
+      "category": "english",
+      "text": "Read chapters 1–3, then summarize the main argument in 200 words.",
+      "focus": "numeric range"
+    },
+    {
+      "id": "en09",
+      "category": "english",
+      "text": "Well... I suppose we could try again tomorrow.",
+      "focus": "ellipsis, hesitation"
+    },
+    {
+      "id": "en10",
+      "category": "english",
+      "text": "Their journey across the desert lasted forty days and forty nights.",
+      "focus": "rhythm, long sentence"
+    },
+    {
+      "id": "mx01",
+      "category": "mixed",
+      "text": "आज की meeting में हमने नए project पर बात की।",
+      "focus": "English nouns in Hindi"
+    },
+    {
+      "id": "mx02",
+      "category": "mixed",
+      "text": "मेरा phone charge नहीं हो रहा, शायद cable खराब है।",
+      "focus": "several English words"
+    },
+    {
+      "id": "mx03",
+      "category": "mixed",
+      "text": "Please अपना homework कल तक submit कर देना।",
+      "focus": "sentence starts in English"
+    },
+    {
+      "id": "mx04",
+      "category": "mixed",
+      "text": "इस app में dark mode का option कहाँ है?",
+      "focus": "question with English terms"
+    },
+    {
+      "id": "mx05",
+      "category": "mixed",
+      "text": "हमारी team ने 3-0 से match जीत लिया!",
+      "focus": "score with Arabic numerals"
+    },
+    {
+      "id": "mx06",
+      "category": "mixed",
+      "text": "Doctor ने कहा कि रोज़ 30 minute walk करो।",
+      "focus": "number and unit"
+    },
+    {
+      "id": "mx07",
+      "category": "mixed",
+      "text": "Weekend पर हम Jaipur घूमने जा रहे हैं।",
+      "focus": "place name in Roman script"
+    },
+    {
+      "id": "mx08",
+      "category": "mixed",
+      "text": "यह report Monday तक manager को भेजनी है।",
+      "focus": "weekday in English"
+    },
+    {
+      "id": "mx09",
+      "category": "mixed",
+      "text": "Online class में internet बार-बार disconnect हो रहा था।",
+      "focus": "hyphenated reduplication"
+    },
+    {
+      "id": "mx10",
+      "category": "mixed",
+      "text": "Krishna ने Arjun से कहा, 'Focus on your karma.'",
+      "focus": "English quote inside Hindi"
+    },
+    {
+      "id": "nm01",
+      "category": "names",
+      "text": "कृष्ण ने गीता का उपदेश दिया।",
+      "focus": "कृष्ण (Kṛṣṇa)"
+    },
+    {
+      "id": "nm02",
+      "category": "names",
+      "text": "अर्जुन ने गांडीव उठाया।",
+      "focus": "अर्जुन (Arjuna), गांडीव (Gāṇḍīva)"
+    },
+    {
+      "id": "nm03",
+      "category": "names",
+      "text": "कर्ण दानवीर के नाम से प्रसिद्ध था।",
+      "focus": "कर्ण (Karṇa)"
+    },
+    {
+      "id": "nm04",
+      "category": "names",
+      "text": "भीष्म ने आजीवन ब्रह्मचर्य का प्रण लिया।",
+      "focus": "भीष्म (Bhīṣma)"
+    },
+    {
+      "id": "nm05",
+      "category": "names",
+      "text": "युधिष्ठिर कभी असत्य नहीं बोलते थे।",
+      "focus": "युधिष्ठिर (Yudhiṣṭhira)"
+    },
+    {
+      "id": "nm06",
+      "category": "names",
+      "text": "दुर्योधन पांडवों से ईर्ष्या करता था।",
+      "focus": "दुर्योधन (Duryodhana)"
+    },
+    {
+      "id": "nm07",
+      "category": "names",
+      "text": "द्रोणाचार्य कौरवों और पांडवों के गुरु थे।",
+      "focus": "द्रोणाचार्य (Droṇācārya)"
+    },
+    {
+      "id": "nm08",
+      "category": "names",
+      "text": "धृतराष्ट्र जन्म से नेत्रहीन थे।",
+      "focus": "धृतराष्ट्र (Dhṛtarāṣṭra)"
+    },
+    {
+      "id": "nm09",
+      "category": "names",
+      "text": "अश्वत्थामा द्रोणाचार्य का पुत्र था।",
+      "focus": "अश्वत्थामा (Aśvatthāmā)"
+    },
+    {
+      "id": "nm10",
+      "category": "names",
+      "text": "कुंती पांडवों की माता थीं।",
+      "focus": "कुंती (Kuntī)"
+    }
+  ]
+}

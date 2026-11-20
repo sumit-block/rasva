@@ -40,8 +40,12 @@ would undercount silently.
   cache files.
 - Walking large model directories costs I/O, which is why results are cached
   briefly and invalidated after writes.
-- Still to do in P0-013, the model installer:
-  - resumable downloads using a `.part` file with HTTP Range requests,
-  - pinned revisions and SHA-256 verification,
-  - an atomic rename into `models/`,
-  - cleanup of orphaned partial files on startup.
+- Model installer (P0-013, implemented in `services/installer.py`):
+  - installs and removals run as queued jobs, so they never overlap inference;
+  - only https sources are accepted, and every redirect hop is checked;
+  - each file's exact size and SHA-256 are verified before an atomic move into
+    `models/`;
+  - downloads resume with HTTP Range from `tmp/downloads/<sha256>.part`. Keying
+    partial files by hash means a changed artifact never resumes onto old bytes;
+  - partial files that no registered engine needs are deleted at startup, and
+    installs left half-finished are marked failed.

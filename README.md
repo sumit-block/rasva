@@ -71,6 +71,13 @@ Register the class in `rasva/engines/registry.py`. Heavy imports belong inside
 `load`. No frontend changes are needed for the engine to appear in Models and
 run through Jobs.
 
+To make an engine installable, list its weights in `artifacts`. Each artifact
+needs a URL pinned to an immutable revision (for Hugging Face, a commit hash,
+never `main`), its SHA-256 and its exact size. If the engine needs its own
+Python packages, set `requirements_lock` to a lockfile shipped inside the
+engine package. Generate it with
+`uv pip compile --generate-hashes --python-platform aarch64-apple-darwin`.
+
 ## Sprint 0 status
 
 | Item | Status |
@@ -85,7 +92,7 @@ run through Jobs.
 | P0-010 quota accounting | Done: 80% warn, 90% download block, hard cap, separate macOS reserve |
 | P0-011 guided onboarding | **Partial:** readiness and quick system test on Home; the first-run wizard is not built yet |
 | P0-012 engine capability registry | Done |
-| P0-013 model installer | **Not started:** resumable, checksum-verified downloads (needed before A1) |
+| P0-013 model installer | Done: queued install/remove jobs, https-only, SHA-256 + size verified, resumable (Range), licence gating, storage preflight, isolated engine environments from hash-pinned lockfiles |
 | P0-014 logging | Done: JSON logs, rotating, no request bodies; engine stderr logged per engine |
 | P0-015 responsive components | Done for current pages |
 

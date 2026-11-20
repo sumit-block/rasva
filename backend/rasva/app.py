@@ -28,7 +28,12 @@ log = logging.getLogger(__name__)
 API_PREFIX = "/api/v1"
 
 
-def create_app(cfg: Settings | None = None, *, trust_test_client: bool = False) -> FastAPI:
+def create_app(
+    cfg: Settings | None = None,
+    *,
+    trust_test_client: bool = False,
+    extra_engines: tuple[str, ...] = (),
+) -> FastAPI:
     cfg = cfg or Settings.from_env()
 
     @asynccontextmanager
@@ -41,7 +46,7 @@ def create_app(cfg: Settings | None = None, *, trust_test_client: bool = False) 
             version = migrate(conn, paths.db_backups)
         finally:
             conn.close()
-        registry = EngineRegistry(include_test_engines=cfg.enable_test_engines)
+        registry = EngineRegistry(cfg.enable_test_engines, extra=extra_engines)
         storage = StorageService(paths)
         bus = EventBus()
         bus.bind(asyncio.get_running_loop())

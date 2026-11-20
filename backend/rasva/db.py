@@ -106,22 +106,31 @@ def migrate(conn: sqlite3.Connection, backup_dir: Path) -> int:
         path = backup(conn, backup_dir, f"pre-v{pending[0][0]:04d}")
         log.info("database backed up before migration", extra={"backup": str(path)})
 
-    for ver, name, sql in pending:
-        log.info("applying migration %s", name)
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            # executescript would COMMIT our transaction; run statements individually.
-            for stmt in _split_sql(sql):
-                conn.execute(stmt)
-            conn.execute(
-                "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
-                (ver, name, utcnow()),
-            )
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
-        conn.execute("COMMIT")
-        version = ver
+    # SQLite's table-rebuild procedure: foreign keys off (only possible outside a
+    # transaction), migrate, verify integrity, commit, foreign keys back on.
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        for ver, name, sql in pending:
+            log.info("applying migration %s", name)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # executescript would COMMIT our transaction; run statements individually.
+                for stmt in _split_sql(sql):
+                    conn.execute(stmt)
+                violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if violations:
+                    raise RuntimeError(f"Migration {name} broke {len(violations)} references")
+                conn.execute(
+                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+                    (ver, name, utcnow()),
+                )
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+            conn.execute("COMMIT")
+            version = ver
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
     return version
 
 

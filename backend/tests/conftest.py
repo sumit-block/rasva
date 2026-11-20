@@ -28,8 +28,8 @@ def settings(tmp_path: Path) -> Settings:
     )
 
 
-def make_client(settings: Settings, **kw) -> TestClient:
-    app = create_app(settings, trust_test_client=True)
+def make_client(settings: Settings, extra_engines: tuple[str, ...] = (), **kw) -> TestClient:
+    app = create_app(settings, trust_test_client=True, extra_engines=extra_engines)
     return TestClient(app, base_url=BASE, client=("127.0.0.1", 50000), **kw)
 
 

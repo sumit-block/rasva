@@ -94,6 +94,17 @@ class Paths:
     def uploads_tmp(self) -> Path:
         return self.tmp / "uploads"
 
+    @property
+    def downloads(self) -> Path:
+        """Resumable partial downloads (``<sha256>.part``), kept across restarts."""
+        return self.tmp / "downloads"
+
+    def model_dir(self, modality: str, engine_id: str) -> Path:
+        return self.models / modality / engine_id
+
+    def env_dir(self, engine_id: str) -> Path:
+        return self.envs / engine_id
+
     def project_dir(self, project_id: str) -> Path:
         return self.projects / project_id
 
@@ -111,9 +122,11 @@ class Paths:
             self.cache / "torch",
             self.cache / "pip",
             self.cache / "xdg",
+            self.cache / "uv",
             self.tmp,
             self.staging,
             self.uploads_tmp,
+            self.downloads,
         ]
 
     def ensure(self) -> None:
@@ -133,6 +146,7 @@ class Paths:
             "TRANSFORMERS_OFFLINE": "1",
             "TORCH_HOME": str(self.cache / "torch"),
             "PIP_CACHE_DIR": str(self.cache / "pip"),
+            "UV_CACHE_DIR": str(self.cache / "uv"),
             "XDG_CACHE_HOME": str(self.cache / "xdg"),
             "TMPDIR": str(self.tmp),
             "DO_NOT_TRACK": "1",
@@ -151,6 +165,12 @@ class Settings:
     cancel_grace_s: float = 10.0
     enable_test_engines: bool = False
     frontend_dist: Path | None = None
+    # Tests only: permit http:// artifact URLs on loopback. Real installs are https-only.
+    allow_loopback_http_downloads: bool = False
+    # Used to build isolated engine environments (ADR-0003). None = look up on PATH.
+    uv_executable: str | None = None
+    download_retries: int = 3
+    download_backoff_s: float = 1.0
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -163,5 +183,6 @@ class Settings:
             host=os.environ.get("RASVA_HOST", "127.0.0.1"),
             port=int(os.environ.get("RASVA_PORT", DEFAULT_PORT)),
             enable_test_engines=os.environ.get("RASVA_ENABLE_TEST_ENGINES") == "1",
+            uv_executable=os.environ.get("RASVA_UV"),
             frontend_dist=dist if dist.is_dir() else None,
         )

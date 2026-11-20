@@ -22,10 +22,30 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 LicenseClass = Literal["permissive", "open-weight", "restricted", "unknown"]
 Modality = Literal["audio", "image", "diagnostic"]
+
+
+class ModelArtifact(BaseModel):
+    """One file the installer downloads into the engine's model directory.
+
+    ``url`` must be pinned to an immutable revision (e.g. a Hugging Face commit
+    hash, never ``main``). Installation refuses artifacts without a sha256.
+    """
+
+    path: str = Field(pattern=r"^[A-Za-z0-9._\-]+(/[A-Za-z0-9._\-]+)*$")  # relative to model_dir
+    url: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(gt=0)
+
+    @field_validator("path")
+    @classmethod
+    def _no_dot_segments(cls, v: str) -> str:
+        if any(part in (".", "..") for part in v.split("/")):
+            raise ValueError("artifact path may not contain '.' or '..' segments")
+        return v
 
 
 class EngineDescriptor(BaseModel):
@@ -47,6 +67,12 @@ class EngineDescriptor(BaseModel):
     approx_peak_memory_bytes: int = 0
     requires_install: bool = True
     experimental: bool = False
+    # Weights to download (P0-013). Empty for built-in engines.
+    artifacts: list[ModelArtifact] = []
+    # Packaged requirements file (relative to the engine's Python package) with
+    # pinned versions and --hash lines. If set, the installer creates an
+    # isolated venv at envs/<id>/ from it (ADR-0003).
+    requirements_lock: str | None = None
 
 
 class CompatibilityReport(BaseModel):

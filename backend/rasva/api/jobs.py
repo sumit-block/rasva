@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
@@ -11,11 +12,14 @@ from pydantic import BaseModel, Field
 
 from rasva.api.deps import DB, State
 from rasva.api.errors import ApiError
+from rasva.api.models import InstallRequest, install_model, remove_model
 from rasva.engines.contract import EngineError
 from rasva.engines.registry import load_class
 from rasva.jobs import repository as repo
+from rasva.jobs.orchestrator import MODEL_TASKS
 from rasva.jobs.states import JobState
 from rasva.services import projects as project_svc
+from rasva.services.installer import ModelStore
 
 router = APIRouter(tags=["jobs"])
 
@@ -30,10 +34,18 @@ class JobCreate(BaseModel):
     inputs: dict[str, Any] = {}
 
 
-def _validate(state: State, engine_id: str, task: str, inputs: dict[str, Any]) -> dict[str, Any]:
+def _validate(
+    state: State, conn: sqlite3.Connection, engine_id: str, task: str, inputs: dict[str, Any]
+) -> dict[str, Any]:
     engine = state.registry.get(engine_id)
     if engine is None:
         raise ApiError(422, "engine_unavailable", "That engine is not available.")
+    if engine.descriptor.requires_install and not ModelStore(conn).is_installed(engine_id):
+        raise ApiError(
+            422,
+            "engine_not_installed",
+            f"{engine.descriptor.display_name} is not installed. Install it from Models first.",
+        )
     if task not in engine.descriptor.tasks:
         raise ApiError(
             422, "unsupported_task", f"{engine.descriptor.display_name} cannot do this task."
@@ -47,14 +59,21 @@ def _validate(state: State, engine_id: str, task: str, inputs: dict[str, Any]) -
 
 @router.post("/jobs", status_code=201)
 def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
+    if body.task in MODEL_TASKS:
+        raise ApiError(422, "unsupported_task", "Install or remove engines from Models.")
     project_svc.get(conn, body.project_id)
     engine_id = body.engine_id
     if engine_id is None:
-        candidates = state.registry.for_task(body.task)
+        store = ModelStore(conn)
+        candidates = [
+            e
+            for e in state.registry.for_task(body.task)
+            if not e.descriptor.requires_install or store.is_installed(e.descriptor.id)
+        ]
         if not candidates:
             raise ApiError(422, "no_engine", "No installed engine can do this yet.")
         engine_id = candidates[0].descriptor.id
-    inputs = _validate(state, engine_id, body.task, body.inputs)
+    inputs = _validate(state, conn, engine_id, body.task, body.inputs)
     job = repo.create(
         conn, project_id=body.project_id, task=body.task, engine_id=engine_id, inputs=inputs
     )
@@ -126,7 +145,12 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
         raise ApiError(
             409, "not_retryable", "Only failed, canceled or interrupted jobs can be retried."
         )
-    inputs = _validate(state, old["engine_id"], old["task"], old["inputs"])
+    if old["task"] == "model.install":
+        accepted = bool(old["inputs"].get("license_accepted"))
+        return install_model(old["engine_id"], state, conn, InstallRequest(accept_license=accepted))
+    if old["task"] == "model.remove":
+        return remove_model(old["engine_id"], state, conn)
+    inputs = _validate(state, conn, old["engine_id"], old["task"], old["inputs"])
     job = repo.create(
         conn,
         project_id=old["project_id"],

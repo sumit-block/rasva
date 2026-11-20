@@ -32,11 +32,20 @@ from rasva.jobs.events import EventBus
 from rasva.jobs.states import TERMINAL, InvalidTransition, JobState
 from rasva.services import assets as asset_svc
 from rasva.services import projects as project_svc
+from rasva.services.installer import (
+    Downloader,
+    Hooks,
+    InstallCanceled,
+    Installer,
+    InstallError,
+    ModelStore,
+)
 from rasva.services.storage import StorageService
 
 log = logging.getLogger(__name__)
 
 READY_TIMEOUT_S = 60.0
+MODEL_TASKS = frozenset({"model.install", "model.remove"})
 PROGRESS_WRITE_INTERVAL_S = 0.25
 
 MSG_CRASH = (
@@ -143,6 +152,13 @@ class Orchestrator:
         self._worker: Worker | None = None
         self._current_job: str | None = None
         self._cancel = asyncio.Event()
+        self._installer = Installer(
+            settings,
+            self._conn,
+            registry,
+            storage,
+            Downloader(settings, backoff_s=settings.download_backoff_s),
+        )
 
     # ---- lifecycle ----
 
@@ -150,6 +166,7 @@ class Orchestrator:
         self._loop = asyncio.get_running_loop()
         for job_id in repo.recover_after_restart(self._conn):
             log.info("job %s marked interrupted after restart", job_id)
+        self._installer.recover_after_restart()
         shutil.rmtree(self._paths.staging, ignore_errors=True)
         self._paths.staging.mkdir(parents=True, exist_ok=True)
         self._task = asyncio.create_task(self._run(), name="rasva-orchestrator")
@@ -232,13 +249,19 @@ class Orchestrator:
             self._worker = None
 
     async def _execute(self, job: dict[str, Any]) -> None:
+        if job["task"] in MODEL_TASKS:
+            await self._execute_model_task(job)
+            return
         job_id = job["id"]
         engine = self._registry.get(job["engine_id"])
-        if engine is None:
+        if engine is None or (
+            engine.descriptor.requires_install
+            and not ModelStore(self._conn).is_installed(engine.descriptor.id)
+        ):
             self._fail(
                 job_id,
-                "engine_unavailable",
-                "The engine for this job is not installed. Choose another engine and retry.",
+                "engine_not_installed",
+                "The engine for this job is not installed. Install it from Models, then retry.",
             )
             return
         try:
@@ -301,6 +324,59 @@ class Orchestrator:
         finally:
             self._current_job = None
             shutil.rmtree(staging, ignore_errors=True)
+            self._storage.invalidate()
+
+    async def _execute_model_task(self, job: dict[str, Any]) -> None:
+        """Install or remove an engine. Runs in-process: network and disk only."""
+        job_id = job["id"]
+        engine = self._registry.get(job["engine_id"])
+        if engine is None:
+            self._fail(job_id, "engine_unavailable", "That engine is no longer available.")
+            return
+        self._current_job = job_id
+        self._cancel.clear()
+        last_write = 0.0
+
+        def transition(state: JobState, detail: str) -> None:
+            self._transition(job_id, state, detail=detail)
+
+        def progress(fraction: float | None, detail: str | None) -> None:
+            nonlocal last_write
+            now = time.monotonic()
+            if now - last_write >= PROGRESS_WRITE_INTERVAL_S or fraction == 1:
+                last_write = now
+                self._publish(repo.update_progress(self._conn, job_id, fraction, detail))
+
+        hooks = Hooks(transition=transition, progress=progress, cancel=self._cancel)
+        try:
+            if repo.get(self._conn, job_id)["cancel_requested"]:
+                self._transition(job_id, JobState.CANCELED, detail="Canceled")
+                return
+            if job["task"] == "model.install":
+                metrics = await self._installer.install(engine, hooks)
+            else:
+                self._transition(job_id, JobState.PREPARING, detail="Stopping the engine")
+                if self._worker and self._worker.engine_id == engine.descriptor.id:
+                    await self._drop_worker()
+                metrics = await self._installer.remove(engine, hooks)
+            self._transition(job_id, JobState.COMPLETED, detail="Done", metrics=metrics)
+        except InstallCanceled:
+            with contextlib.suppress(InvalidTransition):
+                self._transition(job_id, JobState.CANCELED, detail="Canceled")
+        except InstallError as exc:
+            self._fail(job_id, exc.code, exc.user_message)
+        except asyncio.CancelledError:
+            self._mark_interrupted(job_id)
+            raise
+        except Exception:
+            log.exception("model task %s failed", job_id)
+            self._fail(
+                job_id,
+                "internal_error",
+                "Something went wrong inside Rasva. Your other work is safe.",
+            )
+        finally:
+            self._current_job = None
             self._storage.invalidate()
 
     async def _ensure_worker(

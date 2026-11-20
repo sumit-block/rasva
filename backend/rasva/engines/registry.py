@@ -42,10 +42,12 @@ class RegisteredEngine:
 
 
 class EngineRegistry:
-    def __init__(self, include_test_engines: bool = False) -> None:
+    def __init__(self, include_test_engines: bool = False, extra: tuple[str, ...] = ()) -> None:
         paths = dict(BUILTIN)
         if include_test_engines:
             paths.update(TEST_ONLY)
+        for import_path in extra:
+            paths[load_class(import_path).descriptor.id] = import_path
         self._engines: dict[str, RegisteredEngine] = {}
         for engine_id, path in paths.items():
             cls = load_class(path)

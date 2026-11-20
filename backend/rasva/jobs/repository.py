@@ -46,7 +46,7 @@ def _event(conn: sqlite3.Connection, job_id: str, state: str, detail: str | None
 def create(
     conn: sqlite3.Connection,
     *,
-    project_id: str,
+    project_id: str | None,
     task: str,
     engine_id: str,
     inputs: dict[str, Any],

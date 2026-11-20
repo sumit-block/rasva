@@ -24,7 +24,7 @@ export const TERMINAL_STATES: ReadonlySet<JobState> = new Set([
 
 export interface Job {
   id: string;
-  project_id: string;
+  project_id: string | null;
   task: string;
   engine_id: string;
   state: JobState;
@@ -100,7 +100,13 @@ export interface EngineInfo {
   license_class: "permissive" | "open-weight" | "restricted" | "unknown";
   approx_download_bytes: number;
   approx_installed_bytes: number;
+  download_bytes: number;
+  required_bytes: number;
+  installed_bytes: number;
   install_state: "built_in" | "not_installed" | "installing" | "installed" | "failed" | "removing";
+  install_error: string | null;
+  needs_license_confirmation: boolean;
+  active_job: Job | null;
   compatibility: { compatible: boolean; reasons: string[] };
 }
 
@@ -179,6 +185,9 @@ export const api = {
   retryJob: (id: string) => request<Job>(`/jobs/${id}/retry`, { method: "POST" }),
   asset: (id: string) => request<Asset>(`/assets/${id}`),
   models: () => request<EngineInfo[]>("/models"),
+  installModel: (id: string, acceptLicense = false) =>
+    request<Job>(`/models/${id}/install`, { method: "POST", body: json({ accept_license: acceptLicense }) }),
+  removeModel: (id: string) => request<Job>(`/models/${id}`, { method: "DELETE" }),
   settings: () => request<AppSettings>("/settings"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PATCH", body: json(body) }),

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CleanupCard } from "@/components/CleanupCard";
 import { DevicesCard } from "@/components/DevicesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -139,6 +140,7 @@ export function SettingsPage() {
             <CardDescription>{storage.error?.message ?? "Measuring…"}</CardDescription>
           )}
         </Card>
+        {prefs.client === "local" && <CleanupCard onCleaned={() => void storage.reload()} />}
       </div>
     </>
   );

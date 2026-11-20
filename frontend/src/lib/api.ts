@@ -504,4 +504,24 @@ export const lan = {
     request<Device>("/devices/pair", { method: "POST", body: json({ code, name }) }),
 };
 
+export interface CleanupGroup {
+  id: string;
+  label: string;
+  description: string;
+  default: boolean;
+  count: number;
+  bytes: number;
+}
+
+export interface CleanupPlan {
+  groups: CleanupGroup[];
+  missing_files: number;
+}
+
+export const cleanup = {
+  plan: () => request<CleanupPlan>("/storage/cleanup"),
+  run: (groups: string[]) =>
+    request<CleanupPlan & { freed_bytes: number }>("/storage/cleanup", { method: "POST", body: json({ groups }) }),
+};
+
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

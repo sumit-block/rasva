@@ -26,6 +26,7 @@ from rasva.api import (
     settings,
     system,
 )
+from rasva.api import storage as storage_api
 from rasva.api.deps import AppState
 from rasva.config import Settings
 from rasva.db import connect, migrate
@@ -97,7 +98,7 @@ def create_app(
 
     api = APIRouter(prefix=API_PREFIX)
     routers = (system, projects, assets, jobs, models, settings, experiments, pronunciations)
-    for module in (*routers, chapters, devices):
+    for module in (*routers, chapters, devices, storage_api):
         api.include_router(module.router)
     app.include_router(api)
 

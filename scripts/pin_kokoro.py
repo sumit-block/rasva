@@ -15,10 +15,29 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import ssl
 import sys
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+
+def _tls_context() -> ssl.SSLContext:
+    """Verified TLS that also works with the python.org macOS installer.
+
+    That Python ships without CA certificates until "Install Certificates.command"
+    is run, so fall back to macOS's own bundle. Verification is never turned off.
+    """
+    ctx = ssl.create_default_context()
+    if not ctx.get_ca_certs() and not ctx.cert_store_stats()["x509_ca"]:
+        for bundle in ("/etc/ssl/cert.pem", "/private/etc/ssl/cert.pem"):
+            if Path(bundle).is_file():
+                ctx.load_verify_locations(cafile=bundle)
+                break
+    return ctx
+
+
+TLS = _tls_context()
 
 REPO = "hexgrad/Kokoro-82M"
 API = f"https://huggingface.co/api/models/{REPO}"
@@ -35,14 +54,14 @@ FILES = ["config.json", "kokoro-v1_0.pth", *[f"voices/{v}.pt" for v in VOICES]]
 def get_json(url: str) -> object:
     # Only fixed https://huggingface.co URLs are ever opened here.
     req = urllib.request.Request(url, headers={"User-Agent": "rasva-pin/1"})  # noqa: S310
-    with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=60, context=TLS) as resp:  # noqa: S310
         return json.load(resp)
 
 
 def sha256_url(url: str) -> tuple[str, int]:
     digest, size = hashlib.sha256(), 0
     req = urllib.request.Request(url, headers={"User-Agent": "rasva-pin/1"})  # noqa: S310
-    with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=120, context=TLS) as resp:  # noqa: S310
         while chunk := resp.read(1 << 20):
             digest.update(chunk)
             size += len(chunk)

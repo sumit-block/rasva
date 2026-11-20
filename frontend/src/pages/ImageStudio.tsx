@@ -1,7 +1,8 @@
-import { ImageIcon, Plus, Sparkles } from "lucide-react";
+import { ImageIcon, Plus, Sparkles, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { JobRow } from "@/components/JobRow";
+import { ReferencePicker } from "@/components/image/ReferencePicker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -9,52 +10,81 @@ import { EmptyState, Notice } from "@/components/ui/notice";
 import { useAsync } from "@/hooks/useAsync";
 import { useJobs } from "@/hooks/useJobs";
 import { usePrefs } from "@/hooks/usePrefs";
-import { api, isUsable, type EngineInfo, type Job, type Project } from "@/lib/api";
+import { api, isUsable, type EngineInfo, type Job, type Project, type ReferenceInput } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const TASK = "image.generate";
+type Mode = "create" | "edit";
+const TASK: Record<Mode, string> = { create: "image.generate", edit: "image.edit" };
+const IMAGE_TASKS = new Set(Object.values(TASK));
 const MAX_CHARS = 1000;
 const MAX_SEED = 2 ** 32 - 1;
 
-function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; projects: Project[]; reloadProjects: () => Promise<void> }) {
+function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; projects: Project[]; reloadProjects: () => Promise<void> }) {
   const { prefs } = usePrefs();
   const { jobs, upsert } = useJobs();
   const [params, setParams] = useSearchParams();
   const projectId = params.get("project") ?? projects[0]?.id ?? null;
+  const canEdit = engines.some((e) => e.tasks.includes(TASK.edit));
+  const [mode, setMode] = useState<Mode>(canEdit && params.get("mode") === "edit" ? "edit" : "create");
+  const forMode = useMemo(() => engines.filter((e) => e.tasks.includes(TASK[mode])), [engines, mode]);
+  const [engineId, setEngineId] = useState(forMode[0]?.id ?? "");
+  const engine = forMode.find((e) => e.id === engineId) ?? forMode[0];
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
-  const [preset, setPreset] = useState(engine.presets[1]?.id ?? engine.presets[0]?.id ?? "");
+  const [preset, setPreset] = useState("");
   const [steps, setSteps] = useState(25);
   const [guidance, setGuidance] = useState(7.5);
   const [seed, setSeed] = useState("");
+  const [refs, setRefs] = useState<ReferenceInput[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const advanced = prefs.mode === "advanced";
+  // Only Stable Diffusion has a negative prompt and step/guidance knobs worth exposing.
+  const knobs = engine?.features.includes("negative_prompt") ?? false;
+
+  useEffect(() => {
+    // A sensible quality preset for the chosen engine: the middle one.
+    setPreset(engine?.presets[1]?.id ?? engine?.presets[0]?.id ?? "");
+  }, [engine?.id]);
 
   const seedValue = seed.trim() === "" ? undefined : Number(seed);
   const badSeed = seedValue !== undefined && !(Number.isInteger(seedValue) && seedValue >= 0 && seedValue <= MAX_SEED);
   const tooLong = prompt.length > MAX_CHARS || negative.length > MAX_CHARS;
-  const blocked = !prompt.trim() || tooLong || badSeed || submitting;
+  const needsPhoto = mode === "edit" && refs.length === 0;
+  const blocked = !engine || !prompt.trim() || tooLong || badSeed || needsPhoto || submitting;
 
   const createProject = async () => {
     const p = await api.createProject({ name: `Images ${new Date().toLocaleDateString()}`, module: "image" });
     await reloadProjects();
     return p;
   };
+  const ensureProject = async () => {
+    const p = await createProject();
+    setParams({ project: p.id, ...(mode === "edit" ? { mode } : {}) });
+    return p.id;
+  };
+
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    const next = engines.filter((e) => e.tasks.includes(TASK[m]));
+    if (!next.some((e) => e.id === engineId)) setEngineId(next[0]?.id ?? "");
+    setParams({ ...(projectId ? { project: projectId } : {}), ...(m === "edit" ? { mode: m } : {}) });
+  };
 
   const generate = async () => {
+    if (!engine) return;
     setSubmitting(true);
     setError(undefined);
     try {
-      const pid = projectId ?? (await createProject()).id;
-      if (!projectId) setParams({ project: pid });
+      const pid = projectId ?? (await ensureProject());
       upsert(await api.createJob({
-        project_id: pid, task: TASK, engine_id: engine.id,
+        project_id: pid, task: TASK[mode], engine_id: engine.id,
         inputs: {
           prompt,
-          ...(advanced && negative.trim() ? { negative_prompt: negative } : {}),
+          ...(mode === "edit" ? { references: refs } : {}),
+          ...(advanced && knobs && negative.trim() ? { negative_prompt: negative } : {}),
           ...(advanced && seedValue !== undefined ? { seed: seedValue } : {}),
-          ...(preset ? { preset } : { steps, guidance }),
+          ...(preset ? { preset } : knobs ? { steps, guidance } : {}),
         },
       }));
     } catch (e) {
@@ -79,7 +109,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     const byId = new Map(history.map((j) => [j.id, j]));
     for (const j of jobs) if (j.project_id === projectId) byId.set(j.id, j);
     return [...byId.values()]
-      .filter((j) => j.task === TASK)
+      .filter((j) => IMAGE_TASKS.has(j.task))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }, [history, jobs, projectId]);
 
@@ -87,40 +117,62 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     <>
       <PageHeader
         title="Image Studio"
-        description="Describe a picture and generate it on your Mac. This first engine makes 512 × 512 drafts."
+        description="Make a picture from a description, or change one of your photos. Everything runs on your Mac."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor="image-project">Project</label>
-            <select id="image-project" value={projectId ?? ""} onChange={(e) => setParams({ project: e.target.value })}
+            <select id="image-project" value={projectId ?? ""} onChange={(e) => setParams({ project: e.target.value, ...(mode === "edit" ? { mode } : {}) })}
               className="min-h-11 max-w-60 rounded-lg border border-border bg-surface px-3 text-sm">
               {projects.length === 0 && <option value="">New project</option>}
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <Button variant="secondary" disabled={submitting}
-              onClick={() => void createProject().then((p) => setParams({ project: p.id }), (e: Error) => setError(e.message))}>
+              onClick={() => void ensureProject().catch((e: Error) => setError(e.message))}>
               <Plus aria-hidden /> New
             </Button>
           </div>
         }
       />
 
+      {canEdit && (
+        <div role="tablist" aria-label="What to do" className="mb-4 inline-flex rounded-lg border border-border bg-surface-2 p-1">
+          {([["create", "Create from text"], ["edit", "Edit a photo"]] as const).map(([m, label]) => (
+            <button key={m} role="tab" aria-selected={mode === m} onClick={() => switchMode(m)}
+              className={cn("min-h-10 rounded-md px-4 text-sm", mode === m ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card>
-          <CardTitle>Describe the picture</CardTitle>
+          {mode === "edit" && (
+            <div className="mb-4">
+              <ReferencePicker projectId={projectId} value={refs} onChange={setRefs} ensureProject={ensureProject} />
+            </div>
+          )}
+          <CardTitle>{mode === "edit" ? "Describe the change" : "Describe the picture"}</CardTitle>
           <label htmlFor="prompt" className="sr-only">Description</label>
           <textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4}
-            placeholder="A lighthouse on a rocky coast at dusk, warm light in the window, painted in watercolour"
+            placeholder={mode === "edit"
+              ? "Keep the same person and face. Dress them in the blue kurta from the clothing photo, standing in a garden."
+              : "A lighthouse on a rocky coast at dusk, warm light in the window, painted in watercolour"}
             className="mt-3 w-full resize-y rounded-lg border border-border bg-bg p-3 text-base leading-relaxed text-fg placeholder:text-muted" />
           <div className="mt-1 flex justify-between text-xs text-muted">
-            <span>Only about the first 60 words are used.</span>
+            <span>{knobs ? "Only about the first 60 words are used." : mode === "edit" ? "Say what to keep and what to change." : ""}</span>
             <span className={cn(prompt.length > MAX_CHARS && "text-danger")}>{prompt.length} / {MAX_CHARS}</span>
           </div>
           {advanced && (
             <>
-              <label htmlFor="negative" className="mt-4 block text-sm font-medium">Avoid</label>
-              <input id="negative" value={negative} onChange={(e) => setNegative(e.target.value)}
-                placeholder="blurry, extra fingers, text"
-                className="mt-1 min-h-11 w-full rounded-lg border border-border bg-bg px-3 text-sm" />
+              {knobs && (
+                <>
+                  <label htmlFor="negative" className="mt-4 block text-sm font-medium">Avoid</label>
+                  <input id="negative" value={negative} onChange={(e) => setNegative(e.target.value)}
+                    placeholder="blurry, extra fingers, text"
+                    className="mt-1 min-h-11 w-full rounded-lg border border-border bg-bg px-3 text-sm" />
+                </>
+              )}
               <label htmlFor="seed" className="mt-4 block text-sm font-medium">Seed</label>
               <input id="seed" inputMode="numeric" value={seed} onChange={(e) => setSeed(e.target.value)}
                 placeholder="Random"
@@ -132,24 +184,35 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
           {error && <Notice tone="error" className="mt-3">{error}</Notice>}
           <div className="mt-4">
             <Button disabled={blocked} onClick={() => void generate()}>
-              <Sparkles aria-hidden /> Generate image
+              {mode === "edit" ? <Wand2 aria-hidden /> : <Sparkles aria-hidden />} {mode === "edit" ? "Edit photo" : "Generate image"}
             </Button>
+            {needsPhoto && <span className="ml-3 text-xs text-muted">Choose at least one photo.</span>}
           </div>
         </Card>
 
         <Card>
           <CardTitle>Quality</CardTitle>
-          <CardDescription>{engine.display_name}: {engine.summary}</CardDescription>
-          <div role="radiogroup" aria-label="Quality" className="mt-4 grid gap-2">
-            {[...engine.presets, ...(advanced ? [{ id: "", label: "Custom", description: "Use the settings below." }] : [])].map((p) => (
-              <button key={p.id || "custom"} role="radio" aria-checked={preset === p.id} onClick={() => setPreset(p.id)}
-                className={cn("min-h-11 rounded-lg border px-3 py-2 text-left", preset === p.id ? "border-accent bg-accent/10" : "border-border")}>
-                <span className="block text-sm font-medium">{p.label}</span>
-                <span className="block text-xs text-muted">{p.description}</span>
-              </button>
-            ))}
-          </div>
-          {advanced && !preset && (
+          {engine && <CardDescription>{engine.display_name}: {engine.summary}</CardDescription>}
+          {advanced && forMode.length > 1 && (
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block font-medium">Engine</span>
+              <select value={engine?.id ?? ""} onChange={(e) => setEngineId(e.target.value)} className="min-h-11 w-full rounded-lg border border-border bg-bg px-3">
+                {forMode.map((e) => <option key={e.id} value={e.id}>{e.display_name}</option>)}
+              </select>
+            </label>
+          )}
+          {engine && (
+            <div role="radiogroup" aria-label="Quality" className="mt-4 grid gap-2">
+              {[...engine.presets, ...(advanced && knobs ? [{ id: "", label: "Custom", description: "Use the settings below." }] : [])].map((p) => (
+                <button key={p.id || "custom"} role="radio" aria-checked={preset === p.id} onClick={() => setPreset(p.id)}
+                  className={cn("min-h-11 rounded-lg border px-3 py-2 text-left", preset === p.id ? "border-accent bg-accent/10" : "border-border")}>
+                  <span className="block text-sm font-medium">{p.label}</span>
+                  <span className="block text-xs text-muted">{p.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {advanced && knobs && !preset && (
             <>
               <label className="mt-4 block text-sm">
                 <span className="mb-1 flex justify-between font-medium">Steps <span className="text-muted tabular-nums">{steps}</span></span>
@@ -162,15 +225,15 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
             </>
           )}
           <p className="mt-4 text-xs text-muted">
-            Images are labelled as AI-generated in their details. This engine runs without a content filter, so what you
-            create is your responsibility under its licence.
+            Images are labelled as AI-generated in their details. These engines run without a content filter, so what you
+            create is your responsibility under their licences.
           </p>
         </Card>
       </div>
 
       <section aria-label="Results" className="mt-4">
         {results.length === 0 ? (
-          <p className="text-sm text-muted">Your images appear here. Generating one takes a while on the first run while the engine loads.</p>
+          <p className="text-sm text-muted">Your images appear here. The first one takes longer while the engine loads.</p>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">{results.map((j) => <JobRow key={j.id} job={j} />)}</ul>
         )}
@@ -184,12 +247,15 @@ export function ImageStudioPage() {
   const models = useAsync(api.models);
   const projects = useAsync(() => api.projects({ module: "image" }));
 
-  const engine = useMemo(() => (models.data ?? []).find((m) => m.tasks.includes(TASK) && isUsable(m)), [models.data]);
-  const candidate = models.data?.find((m) => m.tasks.includes(TASK));
+  const engines = useMemo(
+    () => (models.data ?? []).filter((m) => m.tasks.some((t) => IMAGE_TASKS.has(t)) && isUsable(m)),
+    [models.data],
+  );
+  const candidate = models.data?.find((m) => m.tasks.some((t) => IMAGE_TASKS.has(t)));
 
   if (models.error || projects.error) return <Notice tone="error">{(models.error ?? projects.error)?.message}</Notice>;
   if (!models.data || !projects.data) return <p className="text-sm text-muted">Loading…</p>;
-  if (!engine) {
+  if (engines.length === 0) {
     return (
       <>
         <PageHeader title="Image Studio" />
@@ -202,5 +268,5 @@ export function ImageStudioPage() {
       </>
     );
   }
-  return <Studio engine={engine} projects={projects.data} reloadProjects={projects.reload} />;
+  return <Studio engines={engines} projects={projects.data} reloadProjects={projects.reload} />;
 }

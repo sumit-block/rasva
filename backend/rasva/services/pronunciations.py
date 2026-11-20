@@ -223,6 +223,8 @@ def prepare_narration(
     use = inputs.get("use_dictionary", True)
     engine_inputs = {k: v for k, v in inputs.items() if k not in (*EXTRA_KEYS, "use_dictionary")}
     language = voice_language(descriptor, inputs.get("voice_id"))
+    if language is None and isinstance(inputs.get("reference"), dict):
+        language = inputs["reference"].get("language")
     if not use or not isinstance(text, str) or language is None:
         return engine_inputs, {}
     result = check(conn, project_id, text, language)

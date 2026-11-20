@@ -96,3 +96,32 @@ class PresetNarrator(FakeNarrator):
             ],
         }
     )
+
+
+class CloningNarrator(FakeNarrator):
+    """Accepts a voice profile reference instead of a preset voice (tests only)."""
+
+    descriptor = EngineDescriptor(
+        **{
+            **FakeNarrator.descriptor.model_dump(),
+            "id": "test-cloner",
+            "display_name": "Cloning narrator",
+            "features": ["preset_voices", "voice_cloning", "preview"],
+        }
+    )
+
+    def validate_input(self, task: str, inputs: dict[str, Any]) -> dict[str, Any]:
+        ref = inputs.get("reference")
+        if not ref:
+            return super().validate_input(task, inputs)
+        from pathlib import Path
+
+        if not Path(ref["path"]).is_file() or not ref.get("transcript"):
+            raise EngineError("invalid_reference", "The voice recording is missing.")
+        text = str(inputs.get("text") or "").strip()
+        if not text:
+            raise EngineError("invalid_input", "Write or paste some text to narrate.")
+        return {
+            "text": text, "reference": ref, "voice_id": "cloned", "speed": 1.0,
+            "preview": bool(inputs.get("preview")), "language": ref["language"], "script": "",
+        }  # fmt: skip

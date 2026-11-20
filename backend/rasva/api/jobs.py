@@ -20,6 +20,7 @@ from rasva.jobs.orchestrator import MODEL_TASKS
 from rasva.jobs.states import JobState
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
+from rasva.services import voices as voice_svc
 from rasva.services.installer import ModelStore
 from rasva.services.presets import PresetError, apply_preset
 
@@ -87,6 +88,12 @@ def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
             raw = apply_preset(engine.descriptor, raw)
         except PresetError as exc:
             raise ApiError(422, "invalid_preset", str(exc)) from exc
+    if engine is not None and raw.get("voice_profile_id"):
+        try:
+            extras["voice_profile_id"] = raw["voice_profile_id"]
+            raw = voice_svc.resolve_profile(conn, state.settings.paths, engine.descriptor, raw)
+        except voice_svc.VoiceError as exc:
+            raise ApiError(422, "invalid_voice", str(exc)) from exc
     if body.task == "audio.narrate" and engine is not None:
         # Approved pronunciations change only what the engine reads (PRD §10.2).
         raw, narration_extras = pronunciation_svc.prepare_narration(
@@ -171,9 +178,19 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
     if old["task"] == "model.remove":
         return remove_model(old["engine_id"], state, conn)
     # Retry exactly what was generated before, including its pronunciation choices.
-    keep = (*pronunciation_svc.EXTRA_KEYS, "preset", "chapter_id", "segment_id")
+    keep = (*pronunciation_svc.EXTRA_KEYS, "preset", "chapter_id", "segment_id", "voice_profile_id")
     extras = {k: v for k, v in old["inputs"].items() if k in keep}
-    raw = {k: v for k, v in old["inputs"].items() if k not in keep}
+    raw = {k: v for k, v in old["inputs"].items() if k not in keep and k != "reference"}
+    if old["inputs"].get("voice_profile_id"):
+        # Re-resolve: the voice may have been deleted since.
+        engine = state.registry.get(old["engine_id"])
+        try:
+            raw = voice_svc.resolve_profile(
+                conn, state.settings.paths, engine.descriptor,
+                {**raw, "voice_profile_id": old["inputs"]["voice_profile_id"]},
+            )  # fmt: skip
+        except (voice_svc.VoiceError, AttributeError) as exc:
+            raise ApiError(422, "invalid_voice", str(exc)) from exc
     inputs = {**_validate(state, conn, old["engine_id"], old["task"], raw), **extras}
     job = repo.create(
         conn,

@@ -41,6 +41,8 @@ class Settings(BaseModel):
     use_dictionary: bool | None = None
     # Quality preset id; empty string clears it (custom settings).
     preset: str | None = None
+    # One of your own voices (engines with voice cloning); empty string clears it.
+    voice_profile_id: str | None = None
 
 
 class ChapterCreate(BaseModel):
@@ -122,6 +124,7 @@ def create(project_id: str, body: ChapterCreate, state: State, conn: DB) -> dict
     chapter_id = _call(
         svc.create, conn, state.registry, project_id=project_id, title=body.title,
         script=body.script, settings=body.settings.model_dump(exclude_none=True),
+        paths=state.settings.paths,
     )  # fmt: skip
     return _detail(conn, chapter_id)
 
@@ -136,7 +139,7 @@ def update(chapter_id: str, body: ChapterUpdate, state: State, conn: DB) -> dict
     _call(
         svc.update, conn, state.registry, chapter_id, title=body.title, script=body.script,
         settings=body.settings.model_dump(exclude_none=True) if body.settings else None,
-        mix=body.mix,
+        mix=body.mix, paths=state.settings.paths,
     )  # fmt: skip
     return _detail(conn, chapter_id)
 
@@ -148,7 +151,9 @@ def delete(chapter_id: str, conn: DB) -> None:
 
 @router.post("/chapters/{chapter_id}/generate")
 def generate(chapter_id: str, body: Generate, state: State, conn: DB) -> dict[str, Any]:
-    job_ids = _call(svc.generate, conn, state.registry, chapter_id, body.scope)
+    job_ids = _call(
+        svc.generate, conn, state.registry, chapter_id, body.scope, state.settings.paths
+    )
     _publish(state, conn, job_ids)
     return _detail(conn, chapter_id)
 
@@ -165,7 +170,7 @@ def cancel(chapter_id: str, state: State, conn: DB) -> dict[str, Any]:
 
 @router.post("/segments/{segment_id}/regenerate")
 def regenerate(segment_id: str, state: State, conn: DB) -> dict[str, Any]:
-    job_id = _call(svc.regenerate_segment, conn, state.registry, segment_id)
+    job_id = _call(svc.regenerate_segment, conn, state.registry, segment_id, state.settings.paths)
     _publish(state, conn, [job_id])
     chapter_id = conn.execute(
         "SELECT chapter_id FROM segments WHERE id = ?", (segment_id,)

@@ -22,6 +22,7 @@ from typing import Any
 
 from rasva.audio.language import classify
 from rasva.audio.text import group, segment
+from rasva.config import Paths
 from rasva.db import dumps, loads, new_id, transaction, utcnow
 from rasva.engines.contract import EngineError
 from rasva.engines.registry import EngineRegistry, RegisteredEngine, load_class
@@ -29,11 +30,12 @@ from rasva.jobs import repository as repo
 from rasva.jobs.states import ACTIVE, JobState
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
+from rasva.services import voices as voice_svc
 from rasva.services.installer import ModelStore
 from rasva.services.presets import PresetError, apply_preset
 
 MAX_SCRIPT_CHARS = 200_000  # roughly two hours of narration
-SETTING_KEYS = ("engine_id", "voice_id", "speed", "use_dictionary", "preset")
+SETTING_KEYS = ("engine_id", "voice_id", "voice_profile_id", "speed", "use_dictionary", "preset")
 GENERATE_SCOPES = ("needed", "failed", "all")
 OPEN_STATES = {JobState.QUEUED.value, JobState.DRAFT.value, *(s.value for s in ACTIVE)}
 BAD_STATES = {JobState.FAILED.value, JobState.INTERRUPTED.value}
@@ -72,24 +74,35 @@ def _engine(conn: sqlite3.Connection, registry: EngineRegistry, engine_id: Any) 
 
 
 def normalize_settings(
-    conn: sqlite3.Connection, registry: EngineRegistry, settings: dict[str, Any]
+    conn: sqlite3.Connection,
+    registry: EngineRegistry,
+    settings: dict[str, Any],
+    paths: Paths | None = None,
 ) -> dict[str, Any]:
     engine = _engine(conn, registry, settings.get("engine_id"))
     preset = settings.get("preset") or None
+    profile_id = settings.get("voice_profile_id") or None
+    raw: dict[str, Any] = {
+        "text": "Test.", "voice_id": settings.get("voice_id"),
+        "speed": settings.get("speed", 1.0), "preset": preset,
+    }  # fmt: skip
     try:
-        raw = apply_preset(
-            engine.descriptor,
-            {"text": "Test.", "voice_id": settings.get("voice_id"),
-             "speed": settings.get("speed", 1.0), "preset": preset},
-        )  # fmt: skip
+        raw = apply_preset(engine.descriptor, raw)
+        if profile_id:
+            if paths is None:
+                raise ChapterError("Your own voices can't be used here.")
+            raw = voice_svc.resolve_profile(
+                conn, paths, engine.descriptor, {**raw, "voice_profile_id": profile_id}
+            )
         checked = load_class(engine.import_path)().validate_input("audio.narrate", raw)
-    except PresetError as exc:
+    except (PresetError, voice_svc.VoiceError) as exc:
         raise ChapterError(str(exc)) from exc
     except EngineError as exc:
         raise ChapterError(exc.user_message) from exc
     return {
         "engine_id": engine.descriptor.id,
-        "voice_id": checked["voice_id"],
+        "voice_id": None if profile_id else checked["voice_id"],
+        "voice_profile_id": profile_id,
         "speed": checked.get("speed", 1.0),
         "use_dictionary": bool(settings.get("use_dictionary", True)),
         "preset": preset,
@@ -111,9 +124,10 @@ def create(
     title: str,
     script: str,
     settings: dict[str, Any],
+    paths: Paths | None = None,
 ) -> str:
     project_svc.get(conn, project_id)
-    clean = normalize_settings(conn, registry, settings)
+    clean = normalize_settings(conn, registry, settings, paths)
     if len(script) > MAX_SCRIPT_CHARS:
         raise ChapterError(f"Chapters can hold up to {MAX_SCRIPT_CHARS:,} characters.")
     chapter_id = new_id("chp")
@@ -141,6 +155,7 @@ def update(
     script: str | None = None,
     settings: dict[str, Any] | None = None,
     mix: dict[str, Any] | None = None,
+    paths: Paths | None = None,
 ) -> None:
     chapter = _chapter_row(conn, chapter_id)
     sets: list[str] = []
@@ -151,7 +166,7 @@ def update(
     if settings is not None:
         sets.append("settings = ?")
         params.append(
-            dumps(normalize_settings(conn, registry, {**chapter["settings"], **settings}))
+            dumps(normalize_settings(conn, registry, {**chapter["settings"], **settings}, paths))
         )
     if mix is not None:
         sets.append("mix = ?")
@@ -362,6 +377,7 @@ def _queue_take(
     registry: EngineRegistry,
     chapter: dict[str, Any],
     seg: dict[str, Any],
+    paths: Paths | None = None,
 ) -> str:
     settings = chapter["settings"]
     engine = _engine(conn, registry, settings["engine_id"])
@@ -374,6 +390,16 @@ def _queue_take(
         "preset": settings.get("preset"),
     }
     raw = apply_preset(engine.descriptor, raw)
+    if settings.get("voice_profile_id"):
+        if paths is None:
+            raise ChapterError("Your own voices can't be used here.")
+        try:
+            raw = voice_svc.resolve_profile(
+                conn, paths, engine.descriptor,
+                {**raw, "voice_profile_id": settings["voice_profile_id"]},
+            )  # fmt: skip
+        except voice_svc.VoiceError as exc:
+            raise ChapterError(str(exc)) from exc
     raw, extras = pronunciation_svc.prepare_narration(
         conn, engine.descriptor, chapter["project_id"], raw
     )
@@ -385,6 +411,8 @@ def _queue_take(
     inputs.update({"chapter_id": chapter["id"], "segment_id": seg["id"]})
     if settings.get("preset"):
         inputs["preset"] = settings["preset"]
+    if settings.get("voice_profile_id"):
+        inputs["voice_profile_id"] = settings["voice_profile_id"]
     job_id = repo.insert(
         conn,
         project_id=chapter["project_id"],
@@ -401,7 +429,11 @@ def _queue_take(
 
 
 def generate(
-    conn: sqlite3.Connection, registry: EngineRegistry, chapter_id: str, scope: str
+    conn: sqlite3.Connection,
+    registry: EngineRegistry,
+    chapter_id: str,
+    scope: str,
+    paths: Paths | None = None,
 ) -> list[str]:
     if scope not in GENERATE_SCOPES:
         raise ChapterError(f"Scope must be one of {GENERATE_SCOPES}.")
@@ -415,11 +447,16 @@ def generate(
     job_ids: list[str] = []
     with transaction(conn):
         for seg in targets:
-            job_ids.append(_queue_take(conn, registry, info, seg))
+            job_ids.append(_queue_take(conn, registry, info, seg, paths))
     return job_ids
 
 
-def regenerate_segment(conn: sqlite3.Connection, registry: EngineRegistry, segment_id: str) -> str:
+def regenerate_segment(
+    conn: sqlite3.Connection,
+    registry: EngineRegistry,
+    segment_id: str,
+    paths: Paths | None = None,
+) -> str:
     row = conn.execute("SELECT chapter_id FROM segments WHERE id = ?", (segment_id,)).fetchone()
     if row is None:
         raise ChapterNotFound(segment_id)
@@ -428,7 +465,7 @@ def regenerate_segment(conn: sqlite3.Connection, registry: EngineRegistry, segme
     if seg["status"] == "generating":
         raise ChapterError("This sentence is already being generated.")
     with transaction(conn):
-        return _queue_take(conn, registry, info, seg)
+        return _queue_take(conn, registry, info, seg, paths)
 
 
 def choose_take(conn: sqlite3.Connection, segment_id: str, take_id: str) -> str:

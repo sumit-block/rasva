@@ -85,7 +85,10 @@ export function LanguagePanel({ script, voiceLanguage, onChange }: {
   return (
     <div className="mt-3 rounded-lg border border-border bg-surface-2/50 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="flex items-center gap-2"><Languages className="size-4 text-accent" aria-hidden /> {parts.join(" · ")} sentences</span>
+        <span className="flex items-center gap-2">
+          <Languages className="size-4 text-accent" aria-hidden /> {parts.join(" · ")}{" "}
+          {analysis.sentences.length === 1 ? "sentence" : "sentences"}
+        </span>
         {undo !== null && (
           <Button size="sm" variant="ghost" onClick={() => { onChange(undo); setUndo(null); }}><Undo2 aria-hidden /> Undo</Button>
         )}

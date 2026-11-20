@@ -51,3 +51,5 @@ ignore = ["S101", "S603"]
 "tests/*" = ["S"]
 # Inline HTML/CSS template for the plain-HTTP setup page.
 "rasva/lan/server.py" = ["E501"]
+# User-facing advice strings read better unwrapped.
+"rasva/audio/reference.py" = ["E501"]

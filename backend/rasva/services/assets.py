@@ -28,6 +28,7 @@ ALLOWED_UPLOADS: dict[str, str] = {
     ".flac": "audio/flac",
     ".m4a": "audio/mp4",
     ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -62,6 +63,8 @@ def _magic_ok(ext: str, head: bytes) -> bool:
         return head[4:8] == b"ftyp"
     if ext == ".ogg":
         return head[:4] == b"OggS"
+    if ext == ".webm":
+        return head[:4] == b"\x1a\x45\xdf\xa3"
     if ext == ".png":
         return head[:8] == b"\x89PNG\r\n\x1a\n"
     if ext in (".jpg", ".jpeg"):

@@ -131,7 +131,10 @@ engine package. Generate it with
 | A2-005 pronunciation dictionary | Done: written forms → "say it as", per voice language, global or per project (project wins), whole-word Devanagari-aware matching |
 | A2-006 pronunciation preview | Done: hear an entry (approved or not) with any installed voice, alone or in an example sentence |
 | A2-009 approved-correction persistence | Done: only approved entries apply; original text, engine text and every substitution are stored on the job; retries reuse the same choices |
-| A2-001 Indic engine · A2-002 language detection · A2-003 mixed-language segmentation · A2-004 transliteration | Not started (need an Indic engine candidate pinned and tested on the M2) |
+| A2-002 language detection | Done: per sentence (Hindi, Roman Hinglish, English, mixed, unclear) with confidence |
+| A2-003 mixed-language segmentation | Done: Devanagari/Latin spans with exact offsets |
+| A2-004 transliteration suggestions | Done: confident for names and common words, rule-based guesses marked; nothing applied without review |
+| A2-001 Indic engine · A2-007/008 comparison and benchmark | Need an Indic engine candidate pinned and tested on the M2 |
 
 ## A4 status: long-form narration and mixing
 
@@ -164,3 +167,14 @@ pronunciation entry does not mark existing takes as outdated.
 To use Rasva from a phone: on the Mac, open Settings → Phone & other devices →
 Allow devices on my Wi-Fi → Pair a device, then scan the QR code with the
 phone. macOS may ask once whether to allow incoming connections; choose Allow.
+
+## A3 status: voice profiles
+
+| Item | Status |
+| --- | --- |
+| Consent | Done: own voice or named speaker's permission plus an explicit statement, stored with the profile; consent history survives deletion (no audio or text in it) |
+| Reference recording | Done: lossless WAV recorded in the browser (no FFmpeg needed) or an uploaded file; quality feedback on length, loudness, clipping, background noise and silence |
+| Transcript | Done: entered and confirmed by you; plausibility check against the speech length (no speech recognition yet) |
+| Reusable profiles, deletion | Done: deleting a voice deletes its recording immediately; refused while jobs use it |
+| Engine plumbing | Done: engines declaring `voice_cloning` receive the reference path, transcript and language for narration, chapters and previews |
+| Cloning engine and listening tests | Need a candidate (e.g. Chatterbox) pinned and tested on the M2 |

@@ -406,6 +406,7 @@ export interface MixTrack {
 export interface ChapterSettings {
   engine_id: string;
   voice_id: string;
+  voice_profile_id?: string | null;
   speed: number;
   use_dictionary: boolean;
   preset?: string | null;
@@ -424,6 +425,7 @@ export interface Chapter {
   exports: Job[];
   mp3_available: boolean;
   music_presets: string[];
+  updated_at: string;
 }
 
 export interface ChapterListItem {
@@ -565,6 +567,62 @@ export const languageTools = {
   analyze: (text: string) => request<LanguageAnalysis>("/audio/analyze", { method: "POST", body: json({ text }) }),
   transliterate: (text: string) =>
     request<{ sentences: TransliterationSentence[] }>("/audio/transliterate", { method: "POST", body: json({ text }) }),
+};
+
+export interface QualityIssue {
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+}
+
+export interface ReferenceQuality {
+  duration_s: number;
+  speech_s?: number;
+  snr_db?: number;
+  speech_dbfs?: number;
+  level: "good" | "warning" | "error";
+  issues: QualityIssue[];
+  transcript_issues?: QualityIssue[];
+}
+
+export interface VoiceProfile {
+  id: string;
+  name: string;
+  description: string;
+  language: "hi" | "en" | "any";
+  reference_asset_id: string;
+  transcript: string;
+  quality: ReferenceQuality;
+  consent: { basis: "self" | "permission"; speaker_name: string; statement: string; recorded_at: string; recorded_from: string };
+  created_at: string;
+}
+
+export const voices = {
+  list: () => request<VoiceProfile[]>("/voices"),
+  statement: () => request<{ statement: string }>("/voices/consent-statement"),
+  consentLog: () =>
+    request<{ id: number; profile_name: string; event: "granted" | "deleted"; basis: string; speaker_name: string; at: string }[]>(
+      "/voices/consent-log",
+    ),
+  uploadReference: (file: Blob, name: string) => {
+    const form = new FormData();
+    form.append("file", file, name);
+    return request<{ asset: Asset; quality: ReferenceQuality }>("/voices/reference", { method: "POST", body: form });
+  },
+  discardReference: async (assetId: string) => {
+    await fetch(`${API}/voices/reference/${assetId}`, { method: "DELETE" });
+  },
+  create: (body: {
+    name: string; language: "hi" | "en" | "any"; reference_asset_id: string; transcript: string;
+    transcript_confirmed: boolean; consent: { basis: "self" | "permission"; speaker_name: string; accepted: boolean };
+  }) => request<VoiceProfile>("/voices", { method: "POST", body: json(body) }),
+  remove: async (id: string) => {
+    const res = await fetch(`${API}/voices/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new ApiError(res.status, body?.error?.code ?? "delete_failed", body?.error?.message ?? "Could not delete that voice.");
+    }
+  },
 };
 
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

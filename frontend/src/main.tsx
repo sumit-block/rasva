@@ -14,6 +14,7 @@ import { AudioStudioPage } from "@/pages/AudioStudio";
 import { ExperimentsPage } from "@/pages/Experiments";
 import { MorePage } from "@/pages/More";
 import { PronunciationPage } from "@/pages/Pronunciation";
+import { VoicesPage } from "@/pages/Voices";
 import { WelcomePage } from "@/pages/Welcome";
 import { PairPage } from "@/pages/Pair";
 import { ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
       { path: "audio", element: <AudioStudioPage /> },
       { path: "image", element: <ImageStudioPage /> },
       { path: "pronunciation", element: <PronunciationPage /> },
+      { path: "voices", element: <VoicesPage /> },
       { path: "library", element: <LibraryPage /> },
       { path: "jobs", element: <JobsPage /> },
       { path: "models", element: <ModelsPage /> },

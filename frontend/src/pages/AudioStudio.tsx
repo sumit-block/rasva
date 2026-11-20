@@ -21,6 +21,8 @@ import {
   type EngineInfo,
   type Project,
   type Voice,
+  type VoiceProfile,
+  voices,
 } from "@/lib/api";
 import { ChapterPanel } from "@/components/audio/ChapterPanel";
 import { LanguagePanel } from "@/components/audio/LanguagePanel";
@@ -32,13 +34,17 @@ import { cn } from "@/lib/utils";
 const MAX_CHARS = 200_000; // per chapter; each sentence is a separate job
 const LANG_LABEL = { en: "English", hi: "Hindi" } as const;
 
-function VoicePicker({ voices, value, onChange }: { voices: Voice[]; value: string; onChange: (id: string) => void }) {
+function VoicePicker({ voices, value, onChange, profiles, profileId, onProfile }: {
+  voices: Voice[]; value: string; onChange: (id: string) => void;
+  profiles?: VoiceProfile[]; profileId?: string | null; onProfile?: (id: string) => void;
+}) {
   const languages = [...new Set(voices.map((v) => v.language))];
   const current = voices.find((v) => v.id === value);
-  const [lang, setLang] = useState<Voice["language"]>(current?.language ?? languages[0] ?? "en");
+  const [lang, setLang] = useState<Voice["language"] | "mine">(profileId ? "mine" : current?.language ?? languages[0] ?? "en");
   useEffect(() => {
-    if (current) setLang(current.language);
-  }, [current]);
+    if (profileId) setLang("mine");
+    else if (current) setLang(current.language);
+  }, [current, profileId]);
   return (
     <div>
       <div role="tablist" aria-label="Voice language" className="mb-3 inline-flex rounded-lg border border-border bg-surface-2 p-1">
@@ -53,8 +59,29 @@ function VoicePicker({ voices, value, onChange }: { voices: Voice[]; value: stri
             {LANG_LABEL[l]}
           </button>
         ))}
+        {profiles && (
+          <button role="tab" aria-selected={lang === "mine"} onClick={() => setLang("mine")}
+            className={cn("min-h-9 rounded-md px-3 text-sm", lang === "mine" ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg")}>
+            Mine
+          </button>
+        )}
       </div>
-      <div role="radiogroup" aria-label="Voice" className="grid grid-cols-2 gap-2">
+      {lang === "mine" && profiles && (
+        profiles.length === 0 ? (
+          <p className="text-sm text-muted">No voices yet. <a href="/voices" className="text-accent underline">Add your voice</a>.</p>
+        ) : (
+          <div role="radiogroup" aria-label="Your voices" className="grid grid-cols-2 gap-2">
+            {profiles.map((p) => (
+              <button key={p.id} role="radio" aria-checked={profileId === p.id} onClick={() => onProfile?.(p.id)}
+                className={cn("min-h-14 rounded-lg border px-3 py-2 text-left", profileId === p.id ? "border-accent bg-accent/10" : "border-border hover:bg-surface-2")}>
+                <span className="block text-sm font-medium">{p.name}</span>
+                <span className="block text-xs text-muted">{p.language === "hi" ? "Hindi" : p.language === "en" ? "English" : "Any language"}</span>
+              </button>
+            ))}
+          </div>
+        )
+      )}
+      {lang !== "mine" && <div role="radiogroup" aria-label="Voice" className="grid grid-cols-2 gap-2">
         {voices
           .filter((v) => v.language === lang)
           .map((v) => (
@@ -74,7 +101,7 @@ function VoicePicker({ voices, value, onChange }: { voices: Voice[]; value: stri
               </span>
             </button>
           ))}
-      </div>
+      </div>}
       {lang === "hi" && (
         <p className="mt-2 text-xs text-muted">
           Hindi voices are basic in this first engine. A stronger Hindi engine and a pronunciation dictionary come next.
@@ -134,10 +161,34 @@ function PronunciationCheck({ text, language, projectId, enabled, onToggle }: {
   );
 }
 
+// Safety net for the last second of typing when a tab closes mid-save: the
+// unsaved draft is kept in this browser and restored on the next visit.
+const DRAFT_KEY = "rasva.audio.draft";
+type Draft = { chapterId: string | null; script: string; at: number };
+function readDraft(): Draft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as Draft) : null;
+  } catch {
+    return null;
+  }
+}
+function writeDraft(d: Draft | null) {
+  try {
+    if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* storage unavailable: server autosave still applies */
+  }
+}
+
 function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; projects: Project[]; reloadProjects: () => Promise<void> }) {
   const [engineId, setEngineId] = useState(engines[0]!.id);
   const engine = engines.find((e) => e.id === engineId) ?? engines[0]!;
   const [preset, setPreset] = useState("");
+  const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
+  const cloning = engine.features.includes("voice_cloning");
+  const profiles = useAsync(() => (cloning ? voices.list() : Promise.resolve([])), [cloning]);
   const [recommended, setRecommended] = useState<string>();
   // Once you pick a voice yourself (or a chapter already has audio), Rasva stops choosing for you.
   const voiceLocked = useRef(false);
@@ -156,15 +207,20 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
   const [speed, setSpeed] = useState(1);
   const [useDictionary, setUseDictionary] = useState(true);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [recovered, setRecovered] = useState(false);
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const loadedFor = useRef<string | null>(null);
   const lastSaved = useRef("");
   const creating = useRef<Promise<string> | null>(null);
+  const mounted = useRef(true);
 
-  const snapshot = (sc: string, v: string, sp: number, d: boolean, e = engineId, pr = preset) =>
-    JSON.stringify([sc, v, sp, d, e, pr]);
-  const currentSettings = () => ({ engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary, preset });
+  const snapshot = (sc: string, v: string, sp: number, d: boolean, e = engineId, pr = preset, vp = voiceProfileId) =>
+    JSON.stringify([sc, v, sp, d, e, pr, vp ?? ""]);
+  const currentSettings = () => ({
+    engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary, preset,
+    voice_profile_id: cloning ? voiceProfileId ?? "" : "",
+  });
 
   // Load the selected chapter, and keep it fresh while it is generating or exporting.
   useEffect(() => {
@@ -192,20 +248,29 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
   useEffect(() => {
     if (chapter && loadedFor.current !== chapter.id) {
       loadedFor.current = chapter.id;
-      setScript(chapter.script);
+      const draft = readDraft();
+      const restore = draft && draft.chapterId === chapter.id && draft.script && draft.script !== chapter.script
+        && draft.at > Date.parse(chapter.updated_at);
+      setScript(restore ? draft.script : chapter.script);
+      setRecovered(!!restore);
       const known = engines.some((e) => e.id === chapter.settings.engine_id);
       if (known) setEngineId(chapter.settings.engine_id);
       setVoiceId(chapter.settings.voice_id);
       setSpeed(chapter.settings.speed);
       setUseDictionary(chapter.settings.use_dictionary);
       setPreset(chapter.settings.preset ?? "");
+      setVoiceProfileId(chapter.settings.voice_profile_id ?? null);
       voiceLocked.current = chapter.segments.some((seg) => seg.current);
       lastSaved.current = snapshot(chapter.script, chapter.settings.voice_id, chapter.settings.speed,
-        chapter.settings.use_dictionary, known ? chapter.settings.engine_id : engineId, chapter.settings.preset ?? "");
+        chapter.settings.use_dictionary, known ? chapter.settings.engine_id : engineId, chapter.settings.preset ?? "",
+        chapter.settings.voice_profile_id ?? null);
       setSaved("idle");
     } else if (!chapterId && project && chapterList.data && loadedFor.current !== `project:${project.id}`) {
       loadedFor.current = `project:${project.id}`;
-      setScript(typeof project.settings.script === "string" ? project.settings.script : "");
+      const draft = readDraft();
+      const restore = draft && draft.chapterId === null && draft.script.trim();
+      setScript(restore ? draft.script : typeof project.settings.script === "string" ? project.settings.script : "");
+      setRecovered(!!restore);
       lastSaved.current = "";
     }
   }, [chapter, chapterId, project, chapterList.data]);
@@ -227,8 +292,10 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
       });
       loadedFor.current = created.id; // keep the typed draft
       lastSaved.current = snapshot(script, voiceId, speed, useDictionary);
+      if (readDraft()?.script === script) writeDraft(null);
       setChapter(created);
-      setParams({ project: target.id, chapter: created.id });
+      // If you already left Audio Studio, don't pull you back to it.
+      if (mounted.current) setParams({ project: target.id, chapter: created.id });
       await chapterList.reload();
       return created.id;
     })().catch((e) => {
@@ -248,6 +315,7 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
     });
     lastSaved.current = snap;
     setChapter(updated);
+    if (readDraft()?.script === script) writeDraft(null);
     return id;
   };
 
@@ -257,14 +325,44 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
     if (!script.trim() && !chapterId) return;
     if (chapterId && loadedFor.current !== chapterId) return;
     if (snapshot(script, voiceId, speed, useDictionary) === lastSaved.current) return;
-    if (!script.trim() && !chapterId) return;
     setSaved("saving");
     const t = window.setTimeout(() => {
       save().then(() => setSaved("saved"), () => setSaved("error"));
     }, 1000);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [script, voiceId, speed, useDictionary, engineId, preset, chapterId]);
+  }, [script, voiceId, speed, useDictionary, engineId, preset, voiceProfileId, chapterId]);
+
+  // Never lose the last second of typing: save immediately when you leave
+  // Audio Studio or the tab is hidden/closed, instead of waiting for the timer.
+  useEffect(() => {
+    if (dirtyRef.current) writeDraft({ chapterId, script, at: Date.now() });
+  }, [script, chapterId]);
+
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const dirtyRef = useRef(false);
+  dirtyRef.current =
+    (!!script.trim() || !!chapterId) &&
+    (!chapterId || loadedFor.current === chapterId) &&
+    snapshot(script, voiceId, speed, useDictionary) !== lastSaved.current;
+  useEffect(() => {
+    mounted.current = true;
+    const flush = () => {
+      if (dirtyRef.current) void saveRef.current().catch(() => undefined);
+    };
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      mounted.current = false;
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
 
   // Simple mode: pick the best installed engine and voice for the script's language.
   const scriptLanguage: "hi" | "en" | null = script.trim() ? (hasDevanagari(script) ? "hi" : "en") : null;
@@ -285,7 +383,13 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
   const chooseVoice = (id: string) => {
     voiceLocked.current = true;
     setRecommended(undefined);
+    setVoiceProfileId(null);
     setVoiceId(id);
+  };
+  const chooseProfile = (id: string) => {
+    voiceLocked.current = true;
+    setRecommended(undefined);
+    setVoiceProfileId(id);
   };
   const chooseEngine = (id: string) => {
     const next = engines.find((e) => e.id === id);
@@ -299,9 +403,11 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
   };
 
   const voice = engine.voices.find((v) => v.id === voiceId);
-  const devanagariWithEnglish = voice?.language === "en" && hasDevanagari(script);
+  const profile = voiceProfileId ? profiles.data?.find((p) => p.id === voiceProfileId) : undefined;
+  const speakingLanguage: "hi" | "en" | undefined = profile ? (profile.language === "any" ? undefined : profile.language) : voice?.language;
+  const devanagariWithEnglish = speakingLanguage === "en" && hasDevanagari(script);
   const tooLong = script.length > MAX_CHARS;
-  const blocked = !script.trim() || !voice || devanagariWithEnglish || tooLong || submitting;
+  const blocked = !script.trim() || !(profile || voice) || devanagariWithEnglish || tooLong || submitting;
 
   const run = async (fn: () => Promise<void>) => {
     setSubmitting(true);
@@ -324,7 +430,10 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
       upsert(await api.createJob({
         project_id: pid, task: "audio.narrate", engine_id: engine.id,
         // Only the first sentence is spoken; send a bounded excerpt.
-        inputs: { text: script.slice(0, 1000), voice_id: voiceId, speed, preview: true, use_dictionary: useDictionary, ...(preset ? { preset } : {}) },
+        inputs: {
+          text: script.slice(0, 1000), speed, preview: true, use_dictionary: useDictionary,
+          ...(profile ? { voice_profile_id: profile.id } : { voice_id: voiceId }), ...(preset ? { preset } : {}),
+        },
       }));
     });
 
@@ -402,9 +511,12 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
             <span>{hasDevanagari(script) ? "Contains Devanagari" : script.trim() ? "Roman letters" : ""}</span>
             <span className={cn(tooLong && "text-danger")}>{script.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</span>
           </div>
-          <LanguagePanel script={script} voiceLanguage={voice?.language} onChange={setScript} />
-          <PronunciationCheck text={script.slice(0, 20000)} language={voice?.language} projectId={projectId}
+          <LanguagePanel script={script} voiceLanguage={speakingLanguage} onChange={setScript} />
+          <PronunciationCheck text={script.slice(0, 20000)} language={speakingLanguage} projectId={projectId}
             enabled={useDictionary} onToggle={setUseDictionary} />
+          {recovered && (
+            <Notice className="mt-3">Restored text from your last visit that hadn't been saved yet. It's saved now.</Notice>
+          )}
           {devanagariWithEnglish && (
             <Notice tone="error" className="mt-3">
               This script contains Devanagari, which English voices skip. Choose a Hindi voice, or write those words in Roman letters.
@@ -436,7 +548,10 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
               </select>
             </label>
           )}
-          <div className="mt-4"><VoicePicker voices={engine.voices} value={voiceId} onChange={chooseVoice} /></div>
+          <div className="mt-4">
+            <VoicePicker voices={engine.voices} value={voiceId} onChange={chooseVoice}
+              {...(cloning ? { profiles: profiles.data ?? [], profileId: voiceProfileId, onProfile: chooseProfile } : {})} />
+          </div>
           {engine.presets.length > 0 && (
             <div className="mt-4">
               <p className="mb-1 text-sm font-medium">Quality</p>

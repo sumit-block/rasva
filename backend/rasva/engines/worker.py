@@ -99,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     chan.emit("ready", engine_id=engine_cls.descriptor.id, pid=os.getpid())
 
     loaded = False
+    blocked_reported = 0
     while True:
         msg = commands.get()
         if msg is None or msg.get("op") == "shutdown":
@@ -133,8 +134,11 @@ def main(argv: list[str] | None = None) -> int:
                     "peak_rss_bytes": _peak_rss_bytes(),
                     **result.metrics,
                 }
-                if netguard.blocked_attempts():
-                    metrics["network_blocked"] = netguard.blocked_attempts()
+                # Blocked since the last result, so a cold start includes load.
+                blocked = netguard.blocked_attempts() - blocked_reported
+                blocked_reported += blocked
+                if blocked:
+                    metrics["network_blocked"] = blocked
                 chan.emit(
                     "result",
                     outputs=[o.model_dump() for o in result.outputs],

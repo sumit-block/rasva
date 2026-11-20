@@ -1,7 +1,8 @@
 """Test-only engine that tries to reach the network from inside its worker.
 
 Loaded by real engine workers (tests/ is under the backend root). ``load`` makes
-one TCP attempt to the port in ``RASVA_TEST_PROBE_PORT``; ``run`` tries each
+one TCP attempt, and so does importing this module inside a worker, to the
+port in ``RASVA_TEST_PROBE_PORT``; ``run`` tries each
 socket entry point against ``inputs["port"]`` and writes what happened to
 ``result.json``.
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -46,12 +48,21 @@ def _connect_ex(port: int) -> int:
         return s.connect_ex(("127.0.0.1", port))
 
 
+def _in_worker() -> bool:
+    spec = getattr(sys.modules["__main__"], "__spec__", None)
+    return getattr(spec, "name", None) == "rasva.engines.worker"
+
+
+_PORT = int(os.environ.get("RASVA_TEST_PROBE_PORT", "0"))
+# The API process imports this module too (registry); only probe in the worker.
+IMPORT_OUTCOME = _attempt(lambda: _connect(_PORT)) if _PORT and _in_worker() else "skipped"
+
+
 class NetProbe(FaultEngine):
     descriptor = EngineDescriptor(**{**FaultEngine.descriptor.model_dump(), "id": "test-net-probe"})
 
     def load(self, ctx: RuntimeContext) -> None:
-        port = int(os.environ.get("RASVA_TEST_PROBE_PORT", "0"))
-        self.load_outcome = _attempt(lambda: _connect(port)) if port else "skipped"
+        self.load_outcome = _attempt(lambda: _connect(_PORT)) if _PORT else "skipped"
 
     def validate_input(self, task: str, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"port": int(inputs["port"])}
@@ -59,6 +70,7 @@ class NetProbe(FaultEngine):
     def run(self, task: str, inputs: dict[str, Any], ctx: RunContext) -> RunResult:
         port = inputs["port"]
         outcomes = {
+            "import": IMPORT_OUTCOME,
             "load": self.load_outcome,
             "connect": _attempt(lambda: _connect(port)),
             "connect_ex": _attempt(lambda: _connect_ex(port)),

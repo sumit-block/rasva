@@ -28,8 +28,9 @@ during normal use after setup.
   library that probes the network and falls back to its local cache keeps
   working. One line goes to the engine log
   (`logs/engines/<engine>.log`) naming the host and port and the calling file
-  and line, never data. Each distinct target is logged once. The run's metrics
-  include `network_blocked` when anything was blocked.
+  and line, never data. Each distinct target is logged once. A job's metrics
+  include `network_blocked`, the attempts blocked since the worker's previous
+  result (so a cold start includes import and load), when that is non-zero.
 - AF_UNIX sockets stay allowed because they are local IPC. Loopback TCP and UDP
   are blocked too, because the worker talks to its parent over stdin/stdout
   only.
@@ -51,6 +52,6 @@ during normal use after setup.
   An OS-level sandbox, such as macOS `sandbox-exec` with `deny network*`, would
   close this gap. It is not done yet.
 - Tests (`tests/test_worker_network_guard.py`) run a probe engine through the
-  real subprocess path. The probe cannot reach a local TCP listener during load
-  or run, its lookups fail, and the log names the attempt. With the escape
+  real subprocess path. The probe cannot reach a local TCP listener at import,
+  load or run, its lookups fail, and the log names the attempt. With the escape
   hatch set, the same probe does connect.

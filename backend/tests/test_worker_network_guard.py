@@ -14,7 +14,7 @@ from tests.conftest import make_client, wait_for
 
 PROBE = "tests.net_probe:NetProbe"
 TERMINAL = {"completed", "failed", "canceled", "interrupted"}
-BLOCKED_KEYS = ("load", "connect", "connect_ex", "create_connection", "getaddrinfo")
+BLOCKED_KEYS = ("import", "load", "connect", "connect_ex", "create_connection", "getaddrinfo")
 
 
 @pytest.fixture
@@ -38,31 +38,38 @@ def _accepted(srv: socket.socket) -> int:
         count += 1
 
 
-def _probe(settings, monkeypatch, port: int) -> tuple[dict, dict]:
+def _probe(settings, monkeypatch, port: int, runs: int = 1) -> tuple[dict, list[dict]]:
+    """Run the probe ``runs`` times on one worker; outcomes of the first run."""
     monkeypatch.setenv("RASVA_TEST_PROBE_PORT", str(port))
+    metrics = []
     with make_client(settings, extra_engines=(PROBE,)) as c:
         project = c.post("/api/v1/projects", json={"name": "Net", "module": "audio"}).json()
-        job = c.post("/api/v1/jobs", json={
-            "project_id": project["id"], "task": "test.run",
-            "engine_id": "test-net-probe", "inputs": {"port": port},
-        }).json()  # fmt: skip
-        done = wait_for(c, job["id"], TERMINAL)
-        assert done["state"] == "completed", done
-        body = c.get(f"/api/v1/assets/{done['outputs'][0]}/content").content
-    return json.loads(body), done["metrics"]
+        for _ in range(runs):
+            job = c.post("/api/v1/jobs", json={
+                "project_id": project["id"], "task": "test.run",
+                "engine_id": "test-net-probe", "inputs": {"port": port},
+            }).json()  # fmt: skip
+            done = wait_for(c, job["id"], TERMINAL)
+            assert done["state"] == "completed", done
+            metrics.append(done["metrics"])
+            if len(metrics) == 1:
+                body = c.get(f"/api/v1/assets/{done['outputs'][0]}/content").content
+    return json.loads(body), metrics
 
 
 def test_worker_cannot_open_network_connections(settings, monkeypatch, listener):
     monkeypatch.delenv(netguard.ALLOW_ENV, raising=False)
     port = listener.getsockname()[1]
-    outcomes, metrics = _probe(settings, monkeypatch, port)
+    outcomes, (cold, warm) = _probe(settings, monkeypatch, port, runs=2)
 
     for key in BLOCKED_KEYS:
         assert outcomes[key].startswith("blocked:"), (key, outcomes)
     assert outcomes["getaddrinfo"] == "blocked:LookupBlocked"
     assert outcomes["socketpair"] == "ok"  # local IPC is unaffected
     assert _accepted(listener) == 0
-    assert metrics["network_blocked"] >= len(BLOCKED_KEYS)
+    # Counted per job: the cold start includes import and load, the warm run does not.
+    assert cold["network_blocked"] == len(BLOCKED_KEYS)
+    assert warm["network_blocked"] == len(BLOCKED_KEYS) - 2
 
     log = (settings.paths.logs / "engines" / "test-net-probe.log").read_text()
     assert f"rasva-netguard: blocked network connection to 127.0.0.1:{port}" in log
@@ -74,11 +81,11 @@ def test_escape_hatch_allows_network(settings, monkeypatch, listener):
     """Positive control: without the guard the same probe does connect."""
     monkeypatch.setenv(netguard.ALLOW_ENV, "1")
     port = listener.getsockname()[1]
-    outcomes, metrics = _probe(settings, monkeypatch, port)
+    outcomes, (metrics,) = _probe(settings, monkeypatch, port)
 
-    for key in ("load", "connect", "connect_ex", "create_connection"):
+    for key in ("import", "load", "connect", "connect_ex", "create_connection"):
         assert outcomes[key] == "connected", (key, outcomes)
-    assert _accepted(listener) >= 4
+    assert _accepted(listener) >= 5
     assert "network_blocked" not in metrics
     log = (settings.paths.logs / "engines" / "test-net-probe.log").read_text()
     assert "network access is NOT blocked" in log

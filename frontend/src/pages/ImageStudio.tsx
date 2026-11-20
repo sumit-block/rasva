@@ -1,7 +1,8 @@
 import { ImageIcon, Plus, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { JobRow } from "@/components/JobRow";
+import { ImageResults } from "@/components/image/ImageResults";
+import { LowMemoryToggle } from "@/components/image/LowMemoryToggle";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -161,6 +162,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
               </label>
             </>
           )}
+          <LowMemoryToggle engine={engine} />
           <p className="mt-4 text-xs text-muted">
             Images are labelled as AI-generated in their details. This engine runs without a content filter, so what you
             create is your responsibility under its licence.
@@ -169,10 +171,10 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
       </div>
 
       <section aria-label="Results" className="mt-4">
-        {results.length === 0 ? (
-          <p className="text-sm text-muted">Your images appear here. Generating one takes a while on the first run while the engine loads.</p>
+        {projectId ? (
+          <ImageResults projectId={projectId} jobs={results} />
         ) : (
-          <ul className="grid gap-3 md:grid-cols-2">{results.map((j) => <JobRow key={j.id} job={j} />)}</ul>
+          <p className="text-sm text-muted">Your images appear here. Generating one takes a while on the first run while the engine loads.</p>
         )}
       </section>
     </>

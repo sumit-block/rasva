@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const POLL_MS = 5000;
 
 const LEVEL_TEXT: Record<Status["memory"]["level"], string> = {
-  ok: "Memory: plenty free",
+  ok: "Memory: OK",
   tight: "Memory: getting tight",
   low: "Memory: low",
 };

@@ -19,9 +19,12 @@ Integration in the I1 engine (``validate_input`` / ``run``)::
         return edit.validate(inputs)                      # in validate_input
     ...
     if edit.is_pose_edit(inputs):                         # in run
-        p = edit.plan(inputs, lora_available=self._pose_lora_loaded)
+        pose = next(r for r in inputs["references"] if r["role"] == "pose")
+        p = edit.plan(inputs, lora_available=self._pose_lora_loaded,
+                      pose_size=edit.image_size(pose["path"]))  # output keeps its aspect
         return edit.run(self._pipe, p, ctx, torch=torch, device=self.device,
-                        load_image=edit.load_image, model_revision=REVISION)
+                        load_image=edit.load_image, model_revision=REVISION,
+                        engine_id=ENGINE_ID, lora_loaded=self._pose_lora_loaded)
 
 Unverified (see docs/engines/pose-control.md): whether Klein follows an
 OpenPose stick figure without the pose LoRA (``pose_source`` lets the user send
@@ -240,13 +243,18 @@ def plan(
 
 
 def load_image(path: str, max_side: int) -> Any:
-    """Open a reference as RGB, upright, no larger than max_side (engine env only)."""
+    """Open a reference as RGB, upright, with its long side at max_side (engine env only).
+
+    Small pictures are scaled up too: pose figures are at most 768 px, and the
+    identity settings rely on the pose being sent at different sizes.
+    """
     from PIL import Image, ImageOps
 
     with Image.open(path) as im:
         img = ImageOps.exif_transpose(im).convert("RGB")
-    img.thumbnail((max_side, max_side), Image.LANCZOS)
-    return img
+    scale = max_side / max(img.size)
+    size = (max(1, round(img.width * scale)), max(1, round(img.height * scale)))
+    return img if size == img.size else img.resize(size, Image.LANCZOS)
 
 
 def image_size(path: str) -> tuple[int, int] | None:

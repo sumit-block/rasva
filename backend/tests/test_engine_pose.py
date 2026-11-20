@@ -332,6 +332,14 @@ def test_cancel_stops_before_saving(fake, tmp_path):
     assert not (tmp_path / "out" / "pose.png").exists()
 
 
+def test_channel_order_switch(monkeypatch):
+    img = np.zeros((1, 1, 3), np.uint8)
+    img[0, 0] = (10, 20, 30)
+    assert P.to_model_order(img)[0, 0].tolist() == [10, 20, 30]
+    monkeypatch.setattr(P, "INPUT_ORDER", "BGR")
+    assert P.to_model_order(img)[0, 0].tolist() == [30, 20, 10]
+
+
 def test_nms_merges_overlapping_boxes():
     boxes = np.array([[0, 0, 10, 10], [1, 1, 11, 11], [50, 50, 60, 60]], np.float32)
     assert P._nms(boxes, np.array([0.9, 0.8, 0.7]), 0.45) == [0, 2]

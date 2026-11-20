@@ -295,3 +295,38 @@ def test_pose_change_end_to_end_with_a_generated_figure(settings):
             "inputs": {"references": [{"asset_id": person["id"], "role": "person"}]},
         })  # fmt: skip
         assert bad.status_code == 422
+
+
+def test_load_image_scales_figures_up_and_photos_down(monkeypatch):
+    """The identity settings send the pose at 512/768/1024 px; figures are 768 px,
+    so they must be scaled up as well as down (fake Pillow)."""
+    import sys
+
+    resized = []
+
+    class Img:
+        def __init__(self, w, h):
+            self.size, self.width, self.height = (w, h), w, h
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def convert(self, mode):
+            assert mode == "RGB"
+            return self
+
+        def resize(self, size, method):
+            resized.append(size)
+            return Img(*size)
+
+    sizes = {"figure.png": (512, 768), "photo.jpg": (3000, 4000)}
+    pil = types.ModuleType("PIL")
+    pil.Image = types.SimpleNamespace(open=lambda p: Img(*sizes[p]), LANCZOS="lanczos")
+    pil.ImageOps = types.SimpleNamespace(exif_transpose=lambda im: im)
+    monkeypatch.setitem(sys.modules, "PIL", pil)
+    assert edit.load_image("figure.png", 1024).size == (683, 1024)
+    assert edit.load_image("photo.jpg", 1024).size == (768, 1024)
+    assert edit.load_image("figure.png", 768).size == (512, 768) and len(resized) == 2

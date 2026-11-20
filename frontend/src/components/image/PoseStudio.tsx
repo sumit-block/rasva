@@ -6,7 +6,7 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { useJobs } from "@/hooks/useJobs";
 import { usePrefs } from "@/hooks/usePrefs";
-import { api, assetUrl, isUsable, type EngineInfo, type Job } from "@/lib/api";
+import { api, assetUrl, isUsable, TERMINAL_STATES, type EngineInfo, type Job } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { CompareView } from "./CompareView";
 import {
@@ -86,20 +86,31 @@ export function PoseStudio({ projectId, ensureProject, models }: {
   const figures = assets.filter(isPoseFigure);
   const byId = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
 
-  // When the pose finder finishes, refresh assets and select the new figure.
-  const extractJob = jobs.find((j) => j.id === extractJobId);
+  // Pose-finder jobs for this project. The latest one is shown while it runs, or
+  // after it fails so its message and Retry stay visible. When any of them
+  // completes (a Retry included) the figures are reloaded; the one we started
+  // is selected.
+  const poseJobs = jobs.filter((j) => j.project_id === projectId && j.task === POSE_TASK);
+  const extractJob = poseJobs.find((j) => j.id === extractJobId) ?? poseJobs.find((j) => j.retry_of === extractJobId);
+  const extracting = !!extractJob && !TERMINAL_STATES.has(extractJob.state);
+  const doneKey = poseJobs.filter((j) => j.state === "completed").map((j) => j.id).join(",");
   useEffect(() => {
-    if (extractJob?.state !== "completed") return;
-    const figureId = extractJob.outputs[0];
-    setExtractJobId(undefined);
-    void (async () => {
-      if (!projectId) return;
-      const fresh = await imageAssets(projectId);
+    if (!doneKey || !projectId) return;
+    let alive = true;
+    void imageAssets(projectId).then((fresh) => {
+      if (!alive) return;
       setAssets(fresh);
-      const asset = fresh.find((a) => a.id === figureId);
-      if (asset) setPose({ kind: "figure", asset });
-    })();
-  }, [extractJob, projectId]);
+      const mine = poseJobs.find((j) => j.state === "completed" && (j.id === extractJobId || j.retry_of === extractJobId));
+      const asset = mine && fresh.find((a) => a.id === mine.outputs[0]);
+      if (asset) {
+        setPose({ kind: "figure", asset });
+        setExtractJobId(undefined);
+      }
+    }, () => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [doneKey, projectId]);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -206,10 +217,10 @@ export function PoseStudio({ projectId, ensureProject, models }: {
           <CardTitle>2. The pose</CardTitle>
           <CardDescription>Pick a figure, or upload a photo of someone in the pose you want.</CardDescription>
           <div className="mt-3 flex flex-wrap gap-2">
-            <FilePick label="Pose from a photo" onFile={(f) => void addPosePhoto(f)} disabled={busy || !!extractJobId} />
+            <FilePick label="Pose from a photo" onFile={(f) => void addPosePhoto(f)} disabled={busy || extracting} />
           </div>
           {!poseEngine && <p className="mt-2 text-xs text-muted">Reading a pose from a photo needs the pose finder (install it from Models). The figures below work without it.</p>}
-          {extractJob && !["completed"].includes(extractJob.state) && (
+          {extractJob && extractJob.state !== "completed" && extractJob.state !== "canceled" && (
             <ul className="mt-3"><JobRow job={extractJob} /></ul>
           )}
           <p className="mt-4 text-xs font-medium text-muted">Built-in figures</p>

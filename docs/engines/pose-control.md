@@ -57,7 +57,7 @@ encoder, I2 falls back to the SD 1.5 path below.
 
 | Setting | What it changes (each is visible to the model) |
 | --- | --- |
-| Keep the face closely | Person photo sent at 1024 px, pose at 512 px. The prompt stresses face, skin tone and hair. Pose-LoRA weight 0.7 |
+| Keep the face closely | Person photo sent at 1024 px, pose at 512 px (references are resized to these long sides, up or down). The prompt stresses face, skin tone and hair. Pose-LoRA weight 0.7 |
 | Balanced (default) | Person 1024 px, pose 768 px. LoRA 0.85 |
 | Follow the pose closely | Person 768 px, pose 1024 px. The prompt stresses limbs, head angle and turn. LoRA 1.0 |
 
@@ -108,8 +108,8 @@ body or clothes.
    [pose-i2-test-plan.md](pose-i2-test-plan.md), §1 first.
 6. Check at once, before the full plan:
    - **DWPose channel order.** The code feeds RGB to both models, following
-     the ControlNet annotator. Compare a known photo's figure against the
-     photo; if limbs are wrong, try BGR.
+     the ControlNet annotator; rtmlib feeds BGR. Compare a known photo's
+     figure against the photo; if limbs are wrong, set `INPUT_ORDER = "BGR"`.
    - **Thresholds.** Detector 0.3, keypoints 0.3.
    - **Core ML provider speed** against CPU.
 7. If pose following is weak (test plan §2), try the LoRA:
@@ -123,7 +123,7 @@ body or clothes.
 
 | Component | Licence | Notes |
 | --- | --- | --- |
-| FLUX.2 [klein] 4B (`black-forest-labs/FLUX.2-klein-4B`) | Apache-2.0 | Confirmed by I1. The 9B variants are non-commercial; don't swap them in |
+| FLUX.2 [klein] 4B (`black-forest-labs/FLUX.2-klein-4B`) | Apache-2.0 per the model card | The owner confirms it with I1. The 9B variants are non-commercial; don't swap them in |
 | DWPose ONNX weights and code (`yzd-v/DWPose`, IDEA-Research/DWPose) | Apache-2.0 | Training datasets (COCO-WholeBody, UBody and others) not checked |
 | onnxruntime 1.32.0 | MIT | |
 | numpy, Pillow | BSD-style / HPND (MIT-CMU) | |
@@ -140,7 +140,11 @@ body or clothes.
 - Whether the refcontrol LoRA loads in diffusers. The LoRA scale API is
   `set_adapters`.
 - DWPose's channel order and thresholds against real weights. The decoding
-  maths matches DWPose's ONNX code but has only run on synthetic tensors.
+  was written to follow DWPose's ONNX code and compared with rtmlib 0.0.16
+  (grid decode, padding, normalisation and SimCC rescaling agree). It has only
+  run on synthetic tensors. Channel order is the open question: the ControlNet
+  annotator passes RGB, rtmlib passes BGR. `INPUT_ORDER` in `pose/__init__.py`
+  is the one switch.
 - Core ML execution-provider coverage for YOLOX and DWPose.
 - The training-data licences behind DWPose and the LoRA.
 - The SD 1.5 fallback's memory use with ControlNet and IP-Adapter added.

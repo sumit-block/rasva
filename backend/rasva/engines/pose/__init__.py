@@ -16,11 +16,17 @@ How it works (DWPose, ONNX, run with onnxruntime; no torch, no pickle files):
    Keypoints, framing and the source photo id go into the output's metadata so
    the figure can be shown, reused as a ``pose`` reference, and traced back.
 
-Pre/post-processing follows DWPose's own ONNX code (Apache-2.0,
+Pre/post-processing is written to follow DWPose's ONNX code (Apache-2.0,
 IDEA-Research/DWPose ``annotator/dwpose/onnxdet.py`` and ``onnxpose.py``), with
 the affine crop done by Pillow instead of OpenCV so the environment stays small.
-The maths is covered by fake-runtime tests; the channel order and thresholds
-still need checking against real weights (test plan §1).
+It was compared with rtmlib 0.0.16 (same lineage) on 2026-11-20: the YOLOX grid
+decode, 114-grey letterbox, 1.25 box padding, aspect fix, mean/std, SimCC split
+2.0 and rescaling agree. Deliberate differences: only the "person" class is kept
+(rtmlib runs NMS over all classes), detector threshold 0.3 (rtmlib 0.7), and a
+keypoint's score is the minimum of its x/y peaks with threshold 0.3 as in DWPose
+(rtmlib: the mean, threshold 0.43). Channel order is unsettled: the ControlNet
+DWPose annotator passes RGB, rtmlib passes OpenCV's BGR. ``INPUT_ORDER`` is the
+one switch; check it first with real weights (test plan §1).
 """
 
 from __future__ import annotations
@@ -68,6 +74,7 @@ OUT_LONG_SIDE = 768
 MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
 STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
 # COCO-17 index for each OpenPose-18 point; None = neck (mid-shoulder).
+INPUT_ORDER = "RGB"  # or "BGR"; see the module docstring
 COCO_TO_OPENPOSE = (0, None, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3)
 
 _MANIFEST = manifest_mod.load(MANIFEST_PATH, ENGINE_ID, {REPO_ID})
@@ -172,7 +179,7 @@ class PoseFinderEngine(Engine):
         (ref,) = inputs["references"]
         started = time.perf_counter()
         ctx.report_progress(0.0, "Opening the photo")
-        img = load_rgb(ref["path"])
+        img = to_model_order(load_rgb(ref["path"]))
         h, w, _ = img.shape
         ctx.raise_if_canceled()
         ctx.report_progress(0.2, "Finding the person")
@@ -231,6 +238,11 @@ def load_rgb(path: str) -> np.ndarray:
     with Image.open(path) as im:
         im = ImageOps.exif_transpose(im)  # phone photos are often stored rotated
         return np.asarray(im.convert("RGB"), dtype=np.uint8)
+
+
+def to_model_order(img: np.ndarray) -> np.ndarray:
+    """RGB pixels -> the channel order both models are fed (INPUT_ORDER)."""
+    return np.ascontiguousarray(img[..., ::-1]) if INPUT_ORDER == "BGR" else img
 
 
 def resize(img: np.ndarray, width: int, height: int) -> np.ndarray:

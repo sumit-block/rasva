@@ -13,7 +13,17 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from rasva import __version__
-from rasva.api import assets, errors, experiments, jobs, models, projects, settings, system
+from rasva.api import (
+    assets,
+    errors,
+    experiments,
+    jobs,
+    models,
+    projects,
+    pronunciations,
+    settings,
+    system,
+)
 from rasva.api.deps import AppState
 from rasva.config import Settings
 from rasva.db import connect, migrate
@@ -70,7 +80,7 @@ def create_app(
     errors.install(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for module in (system, projects, assets, jobs, models, settings, experiments):
+    for module in (system, projects, assets, jobs, models, settings, experiments, pronunciations):
         api.include_router(module.router)
     app.include_router(api)
 

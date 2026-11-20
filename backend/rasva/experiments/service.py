@@ -26,6 +26,7 @@ from rasva.experiments.scoring import (
 from rasva.jobs import repository as repo
 from rasva.jobs.states import TERMINAL
 from rasva.services import projects as project_svc
+from rasva.services import pronunciations as pronunciation_svc
 from rasva.services.installer import ModelStore
 
 MAX_RUNS = 600
@@ -171,10 +172,14 @@ def create(
                 d = engine.descriptor
                 skip_reason = None
                 job_id = None
+                raw, extras = pronunciation_svc.prepare_narration(
+                    conn, d, None, {**r["settings"], "text": case["text"], "preview": False}
+                )
                 try:
-                    inputs = load_class(engine.import_path)().validate_input(
-                        task, {**r["settings"], "text": case["text"], "preview": False}
-                    )
+                    inputs = {
+                        **load_class(engine.import_path)().validate_input(task, raw),
+                        **extras,
+                    }
                 except EngineError as exc:
                     skip_reason = exc.user_message
                 else:

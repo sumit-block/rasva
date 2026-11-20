@@ -42,7 +42,8 @@ backend/rasva/
   jobs/                state machine, durable repository, orchestrator, event bus
   engines/             adapter contract, registry, worker subprocess, built-in engines
   engines/kokoro/      Kokoro adapter, pinned model manifest, macOS arm64 lockfile
-  audio/               script detection and sentence segmentation (Hindi-aware)
+  audio/               script detection, sentence segmentation, pronunciation rules (Hindi-aware)
+  experiments/         experiment service, PRD §20 scoring, benchmark sets (audio-v1)
   services/            storage quota/preflight, assets, projects, system check, settings
 frontend/src/          React + TS + Vite + Tailwind v4, shadcn-style components, Lucide
 docs/adr/              architecture decision records
@@ -124,3 +125,12 @@ engine package. Generate it with
 | A1-010 experiment records | Done: fixed inputs x candidates, metrics, 1-5 reviews, PRD §20 weights and gates, decisions |
 | A1-011 benchmark | Done: 60-sentence `audio-v1` set (PRD §29.2); **needs running on the M2 with Kokoro** |
 | A1-012 acceptance review | Needs the M2 |
+
+## A2 status (started early; engine-independent parts)
+
+| Item | Status |
+| --- | --- |
+| A2-005 pronunciation dictionary | Done: written forms → "say it as", per voice language, global or per project (project wins), whole-word Devanagari-aware matching |
+| A2-006 pronunciation preview | Done: hear an entry (approved or not) with any installed voice, alone or in an example sentence |
+| A2-009 approved-correction persistence | Done: only approved entries apply; original text, engine text and every substitution are stored on the job; retries reuse the same choices |
+| A2-001 Indic engine · A2-002 language detection · A2-003 mixed-language segmentation · A2-004 transliteration | Not started (need an Indic engine candidate pinned and tested on the M2) |

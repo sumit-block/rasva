@@ -19,6 +19,7 @@ from rasva.jobs import repository as repo
 from rasva.jobs.orchestrator import MODEL_TASKS
 from rasva.jobs.states import JobState
 from rasva.services import projects as project_svc
+from rasva.services import pronunciations as pronunciation_svc
 from rasva.services.installer import ModelStore
 
 router = APIRouter(tags=["jobs"])
@@ -73,7 +74,14 @@ def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
         if not candidates:
             raise ApiError(422, "no_engine", "No installed engine can do this yet.")
         engine_id = candidates[0].descriptor.id
-    inputs = _validate(state, conn, engine_id, body.task, body.inputs)
+    raw, extras = dict(body.inputs), {}
+    engine = state.registry.get(engine_id)
+    if body.task == "audio.narrate" and engine is not None:
+        # Approved pronunciations change only what the engine reads (PRD §10.2).
+        raw, extras = pronunciation_svc.prepare_narration(
+            conn, engine.descriptor, body.project_id, raw
+        )
+    inputs = {**_validate(state, conn, engine_id, body.task, raw), **extras}
     job = repo.create(
         conn, project_id=body.project_id, task=body.task, engine_id=engine_id, inputs=inputs
     )
@@ -150,7 +158,10 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
         return install_model(old["engine_id"], state, conn, InstallRequest(accept_license=accepted))
     if old["task"] == "model.remove":
         return remove_model(old["engine_id"], state, conn)
-    inputs = _validate(state, conn, old["engine_id"], old["task"], old["inputs"])
+    # Retry exactly what was generated before, including its pronunciation choices.
+    extras = {k: v for k, v in old["inputs"].items() if k in pronunciation_svc.EXTRA_KEYS}
+    raw = {k: v for k, v in old["inputs"].items() if k not in pronunciation_svc.EXTRA_KEYS}
+    inputs = {**_validate(state, conn, old["engine_id"], old["task"], raw), **extras}
     job = repo.create(
         conn,
         project_id=old["project_id"],

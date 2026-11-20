@@ -5,6 +5,7 @@ import {
   FolderOpen,
   Home,
   Image as ImageIcon,
+  Languages,
   ListChecks,
   Loader2,
   Menu,
@@ -22,6 +23,7 @@ export type NavItem = { to: string; label: string; icon: typeof Home; advanced?:
 export const NAV: NavItem[] = [
   { to: "/", label: "Home", icon: Home, mobile: true },
   { to: "/audio", label: "Audio Studio", icon: AudioLines, mobile: true },
+  { to: "/pronunciation", label: "Pronunciation", icon: Languages },
   { to: "/image", label: "Image Studio", icon: ImageIcon },
   { to: "/library", label: "Library", icon: FolderOpen, mobile: true },
   { to: "/jobs", label: "Jobs", icon: ListChecks, mobile: true },

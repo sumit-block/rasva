@@ -1,6 +1,6 @@
 import { AudioLines, Play, Plus, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { JobRow } from "@/components/JobRow";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { EmptyState, Notice } from "@/components/ui/notice";
 import { useAsync } from "@/hooks/useAsync";
 import { useJobs } from "@/hooks/useJobs";
 import { usePrefs } from "@/hooks/usePrefs";
-import { api, isUsable, type EngineInfo, type Project, type Voice } from "@/lib/api";
+import { api, isUsable, pronunciations, type AppliedPronunciation, type EngineInfo, type Project, type Voice } from "@/lib/api";
 import { hasDevanagari } from "@/lib/script";
 import { cn } from "@/lib/utils";
 
@@ -68,6 +68,56 @@ function VoicePicker({ voices, value, onChange }: { voices: Voice[]; value: stri
   );
 }
 
+/** Shows which words the pronunciation dictionary will change (PRD §10.2 step 6). */
+function PronunciationCheck({ text, language, projectId, enabled, onToggle }: {
+  text: string; language: "hi" | "en" | undefined; projectId: string | null; enabled: boolean; onToggle: (v: boolean) => void;
+}) {
+  const [result, setResult] = useState<{ applied: AppliedPronunciation[]; pending: AppliedPronunciation[] }>();
+  useEffect(() => {
+    if (!language || !text.trim()) {
+      setResult(undefined);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      pronunciations
+        .check({ text, language, ...(projectId ? { project_id: projectId } : {}) })
+        .then((r) => setResult({ applied: r.applied, pending: r.unapproved_matches }), () => setResult(undefined));
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [text, language, projectId]);
+
+  const unique = (xs: AppliedPronunciation[]) => [...new Map(xs.map((a) => [`${a.written}→${a.spoken}`, a])).values()];
+  const applied = unique(result?.applied ?? []);
+  const pending = unique(result?.pending ?? []);
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-surface-2/50 p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex min-h-9 items-center gap-2">
+          <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} />
+          Use my pronunciations
+        </label>
+        <Link to="/pronunciation" className="text-xs text-accent underline">Manage</Link>
+      </div>
+      {enabled && applied.length > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          Will read:{" "}
+          {applied.map((a) => (
+            <span key={a.written + a.spoken} className="mr-2 inline-block text-fg">{a.written} → {a.spoken}</span>
+          ))}
+        </p>
+      )}
+      {pending.length > 0 && (
+        <p className="mt-1 text-xs text-warning">
+          Not yet approved: {pending.map((a) => a.written).join(", ")}. Approve them on the Pronunciation page to use them.
+        </p>
+      )}
+      {enabled && applied.length === 0 && pending.length === 0 && text.trim() && (
+        <p className="mt-2 text-xs text-muted">No dictionary words in this script.</p>
+      )}
+    </div>
+  );
+}
+
 function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; projects: Project[]; reloadProjects: () => Promise<void> }) {
   const [params, setParams] = useSearchParams();
   const { jobs, upsert } = useJobs();
@@ -78,6 +128,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
   const [script, setScript] = useState("");
   const [voiceId, setVoiceId] = useState<string>(engine.voices[0]?.id ?? "");
   const [speed, setSpeed] = useState(1);
+  const [useDictionary, setUseDictionary] = useState(true);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
@@ -161,7 +212,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
           project_id: target.id,
           task: "audio.narrate",
           engine_id: engine.id,
-          inputs: { text: script, voice_id: voiceId, speed, preview },
+          inputs: { text: script, voice_id: voiceId, speed, preview, use_dictionary: useDictionary },
         }),
       );
     } catch (e) {
@@ -225,6 +276,8 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
               {script.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}
             </span>
           </div>
+          <PronunciationCheck text={script} language={voice?.language} projectId={projectId}
+            enabled={useDictionary} onToggle={setUseDictionary} />
           {devanagariWithEnglish && (
             <Notice tone="error" className="mt-3">
               This script contains Devanagari, which English voices skip. Choose a Hindi voice, or write those words in

@@ -310,4 +310,49 @@ export const experiments = {
   cancel: (id: string) => request<Experiment>(`/experiments/${id}/cancel`, { method: "POST" }),
 };
 
+export interface PronunciationEntry {
+  id: string;
+  project_id: string | null;
+  written_forms: string[];
+  spoken: string;
+  phonetic_hint: string;
+  language: "hi" | "en" | "any";
+  whole_word: boolean;
+  case_sensitive: boolean;
+  approved: boolean;
+  examples: string[];
+  notes: string;
+  updated_at: string;
+}
+
+export interface AppliedPronunciation {
+  entry_id: string;
+  written: string;
+  spoken: string;
+  start: number;
+  end: number;
+}
+
+export type EntryInput = Partial<Omit<PronunciationEntry, "id" | "updated_at">>;
+
+export const pronunciations = {
+  list: (projectId?: string) =>
+    request<PronunciationEntry[]>(`/pronunciations${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`),
+  suggestions: () => request<{ written: string; hint: string }[]>("/pronunciations/suggestions"),
+  create: (body: EntryInput) => request<PronunciationEntry>("/pronunciations", { method: "POST", body: json(body) }),
+  update: (id: string, body: EntryInput) =>
+    request<PronunciationEntry>(`/pronunciations/${id}`, { method: "PATCH", body: json(body) }),
+  remove: async (id: string) => {
+    const res = await fetch(`${API}/pronunciations/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new ApiError(res.status, "delete_failed", "Could not delete that pronunciation.");
+  },
+  check: (body: { text: string; language: "hi" | "en"; project_id?: string }) =>
+    request<{ normalized: string; applied: AppliedPronunciation[]; unapproved_matches: AppliedPronunciation[] }>(
+      "/pronunciations/check",
+      { method: "POST", body: json(body) },
+    ),
+  preview: (id: string, body: { engine_id: string; voice_id: string; example?: number }) =>
+    request<Job>(`/pronunciations/${id}/preview`, { method: "POST", body: json(body) }),
+};
+
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

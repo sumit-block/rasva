@@ -33,6 +33,7 @@ import traceback
 from pathlib import Path
 from typing import IO, Any
 
+from rasva.engines import netguard
 from rasva.engines.contract import (
     Canceled,
     EngineError,
@@ -72,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout = sys.stderr
     chan = Channel(protocol_out)
 
+    # Before the engine module (and its ML libraries) is imported: no network
+    # during load or generation (PRD §21.5). Installs run in the API process.
+    netguard.install()
     engine_cls = load_class(args.engine)
     engine = engine_cls()
     runtime = RuntimeContext(model_dir=Path(args.model_dir), cache_dir=Path(args.cache_dir))
@@ -129,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
                     "peak_rss_bytes": _peak_rss_bytes(),
                     **result.metrics,
                 }
+                if netguard.blocked_attempts():
+                    metrics["network_blocked"] = netguard.blocked_attempts()
                 chan.emit(
                     "result",
                     outputs=[o.model_dump() for o in result.outputs],

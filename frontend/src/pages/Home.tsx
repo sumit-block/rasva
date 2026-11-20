@@ -1,5 +1,5 @@
 import { AlertTriangle, AudioLines, CheckCircle2, HardDrive, Play, XCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -21,9 +21,14 @@ export function HomePage() {
   const storage = useAsync(() => api.storage());
   const projects = useAsync(() => api.projects());
   const models = useAsync(api.models);
+  const settings = useAsync(api.settings);
+  const navigate = useNavigate();
+  // First launch: start the guided setup (PRD §8). It can be skipped at any step.
+  useEffect(() => {
+    if (settings.data && !settings.data["onboarding.completed"]) navigate("/welcome", { replace: true });
+  }, [settings.data, navigate]);
   const narrationReady = !!models.data?.some((m) => m.tasks.includes("audio.narrate") && isUsable(m));
   const { upsert } = useJobs();
-  const navigate = useNavigate();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>();
 

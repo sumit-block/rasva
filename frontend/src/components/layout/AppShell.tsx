@@ -7,6 +7,7 @@ import {
   Image as ImageIcon,
   ListChecks,
   Loader2,
+  Menu,
   Settings as SettingsIcon,
   WifiOff,
 } from "lucide-react";
@@ -16,9 +17,9 @@ import { STATE_LABEL } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { usePrefs } from "@/hooks/usePrefs";
 
-type NavItem = { to: string; label: string; icon: typeof Home; advanced?: boolean; mobile?: boolean };
+export type NavItem = { to: string; label: string; icon: typeof Home; advanced?: boolean; mobile?: boolean };
 
-const NAV: NavItem[] = [
+export const NAV: NavItem[] = [
   { to: "/", label: "Home", icon: Home, mobile: true },
   { to: "/audio", label: "Audio Studio", icon: AudioLines, mobile: true },
   { to: "/image", label: "Image Studio", icon: ImageIcon },
@@ -26,8 +27,10 @@ const NAV: NavItem[] = [
   { to: "/jobs", label: "Jobs", icon: ListChecks, mobile: true },
   { to: "/models", label: "Models", icon: Boxes },
   { to: "/experiments", label: "Experiments", icon: FlaskConical, advanced: true },
-  { to: "/settings", label: "Settings", icon: SettingsIcon, mobile: true },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
+
+const MORE: NavItem = { to: "/more", label: "More", icon: Menu, mobile: true };
 
 function JobStatusChip() {
   const { active, connected, jobs } = useJobs();
@@ -109,8 +112,7 @@ export function AppShell() {
       {/* Mobile bottom navigation */}
       <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         <ul className="grid grid-cols-5">
-          {items
-            .filter((n) => n.mobile)
+          {[...items.filter((n) => n.mobile), MORE]
             .map(({ to, label, icon: Icon }) => (
               <li key={to}>
                 <NavLink

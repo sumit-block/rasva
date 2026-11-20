@@ -96,7 +96,7 @@ engine package. Generate it with
 | P0-007 projects API · P0-008 assets API | Done: validated, hashed, quota-checked uploads; traversal-safe downloads |
 | P0-009 durable job state machine | Done: restart recovery, cooperative and forced cancel, retry lineage |
 | P0-010 quota accounting | Done: 80% warn, 90% download block, hard cap, separate macOS reserve |
-| P0-011 guided onboarding | **Partial:** readiness and quick system test on Home; the first-run wizard is not built yet |
+| P0-011 guided onboarding | Done: 7-step first-run setup (Mac check, storage limit, starter engine with size/licence, first preview, phone-access note), resumable and skippable |
 | P0-012 engine capability registry | Done |
 | P0-013 model installer | Done: queued install/remove jobs, https-only, SHA-256 + size verified, resumable (Range), licence gating, storage preflight, isolated engine environments from hash-pinned lockfiles |
 | P0-014 logging | Done: JSON logs, rotating, no request bodies; engine stderr logged per engine |
@@ -121,4 +121,6 @@ engine package. Generate it with
 | A1-005 output saving · A1-006 player · A1-007 WAV download | Done |
 | A1-008 history | Done for each project's results; versioning/compare comes with A4 |
 | A1-009 runtime and memory measurement | Metrics recorded per job (RTF, load time, peak RSS); **not yet measured on the M2** |
-| A1-010 experiment records · A1-011 benchmark · A1-012 acceptance | Not started |
+| A1-010 experiment records | Done: fixed inputs x candidates, metrics, 1-5 reviews, PRD §20 weights and gates, decisions |
+| A1-011 benchmark | Done: 60-sentence `audio-v1` set (PRD §29.2); **needs running on the M2 with Kokoro** |
+| A1-012 acceptance review | Needs the M2 |

@@ -126,6 +126,7 @@ export type AppSettings = {
   "storage.os_reserve_bytes": number;
   "ui.mode": "simple" | "advanced";
   "onboarding.completed": boolean;
+  "onboarding.step": number;
   "lan.enabled": boolean;
 };
 

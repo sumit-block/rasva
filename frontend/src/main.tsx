@@ -12,11 +12,14 @@ import { ModelsPage } from "@/pages/Models";
 import { SettingsPage } from "@/pages/Settings";
 import { AudioStudioPage } from "@/pages/AudioStudio";
 import { ExperimentsPage } from "@/pages/Experiments";
+import { MorePage } from "@/pages/More";
+import { WelcomePage } from "@/pages/Welcome";
 import { ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
 
 document.documentElement.dataset.theme ??= "dark";
 
 const router = createBrowserRouter([
+  { path: "/welcome", element: <WelcomePage /> },
   {
     path: "/",
     element: <AppShell />,
@@ -30,6 +33,7 @@ const router = createBrowserRouter([
       { path: "experiments", element: <ExperimentsPage /> },
       { path: "experiments/:id", element: <ExperimentsPage /> },
       { path: "settings", element: <SettingsPage /> },
+      { path: "more", element: <MorePage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
   },

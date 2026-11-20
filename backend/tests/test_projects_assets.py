@@ -105,3 +105,12 @@ def test_project_settings_merge_for_autosave(client, project):
     assert r.json()["settings"] == {"script": "दूसरा ड्राफ़्ट", "voice_id": "hf_alpha"}
     big = client.patch(url, json={"settings": {"script": "x" * 300_000}})
     assert big.status_code == 413
+
+
+def test_onboarding_progress_is_persisted(client):
+    assert client.get("/api/v1/settings").json()["onboarding.step"] == 0
+    r = client.patch("/api/v1/settings", json={"onboarding.step": 3})
+    assert r.json()["onboarding.step"] == 3
+    assert client.patch("/api/v1/settings", json={"onboarding.step": 99}).status_code == 422
+    r = client.patch("/api/v1/settings", json={"onboarding.completed": True})
+    assert r.json()["onboarding.completed"] is True

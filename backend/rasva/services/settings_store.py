@@ -13,6 +13,7 @@ DEFAULTS: dict[str, Any] = {
     "storage.os_reserve_bytes": DEFAULT_OS_RESERVE_BYTES,
     "ui.mode": "simple",
     "onboarding.completed": False,
+    "onboarding.step": 0,  # resume point for an interrupted first-run setup
     "lan.enabled": False,
 }
 
@@ -20,6 +21,7 @@ DEFAULTS: dict[str, Any] = {
 _LIMITS: dict[str, tuple[int, int]] = {
     "storage.budget_bytes": (5 * GB, 2000 * GB),
     "storage.os_reserve_bytes": (5 * GB, 500 * GB),
+    "onboarding.step": (0, 20),
 }
 _ENUMS: dict[str, set[Any]] = {"ui.mode": {"simple", "advanced"}}
 # Not settable through the generic API: LAN needs pairing + TLS (phase A5).

@@ -197,3 +197,13 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Measurements (M2, 2026-11-20) | 6 of 6 completed; cold load 14.5 s; median 52.6 s per 512 × 512 image at 25 steps; GPU memory reserved 8.5 GB; installed 2.75 GB ([details](docs/engines/sd15.md)) |
 | Exit-gate checks | Saved outputs are reproducible (same seed gives an identical file); the engine unloads, and Kokoro narrated normally afterwards; no network use; prompts stay out of logs |
 | Still open | Quality review by eye; image experiments (§20.2 weights); a memory guard before image jobs |
+
+## I1 status: edit from reference photos (ADR-0007)
+
+| Item | Status |
+| --- | --- |
+| Engine | FLUX.2 Klein 4B on mflux/MLX: official files quantised to 4-bit on the Mac by the installer's new one-time prepare step. Text-to-image and editing with 1–4 photos |
+| Reference photos | Done: upload with a role (person, clothing, pose, background), change roles, choose up to 4; checked on create and retry ([references.py](backend/rasva/services/references.py)) |
+| Image Studio | Done: "Create from text" and "Edit a photo", engine choice in Advanced mode |
+| Measurements (M2, 2026-11-20) | 768 px: 50–53 s from text, 124 s with 1 photo, 167 s with 2; MLX peak 4.9–7.3 GB; installed 21.9 GB including the 16 GB originals ([details](docs/engines/flux2klein.md)) |
+| Still open | Owner review of quality; tests on photos of people; whether to delete the 16 GB originals; versions and before/after (I4 branch) |

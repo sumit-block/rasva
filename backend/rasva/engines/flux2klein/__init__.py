@@ -53,6 +53,7 @@ MARKER = "rasva-prepared.json"
 MAX_PROMPT_CHARS = 2_000
 MAX_SEED = 2**32 - 1
 MAX_REFERENCES = 4
+CACHE_LIMIT_BYTES = 1024**3
 REFERENCE_MAX_SIDE = 1024  # phone photos are large; bigger adds memory, not detail
 SIZE_RANGE = (256, 1024)
 DEFAULTS = {"steps": 4, "guidance": 1.0, "width": 768, "height": 768}
@@ -100,7 +101,8 @@ class Flux2KleinEngine(Engine):
         source_url=f"https://huggingface.co/{REPO_ID}",
         approx_download_bytes=_WEIGHTS,
         approx_installed_bytes=_WEIGHTS + _Q4_ESTIMATE + _ENV_ESTIMATE,
-        approx_peak_memory_bytes=8 * 1024**3,  # estimate; replaced by the M2 measurement
+        # Measured on the M2: 6.3 GB process peak at 768 px with the 1 GB cache limit.
+        approx_peak_memory_bytes=7 * 1024**3,
         artifacts=_ARTIFACTS,
         requirements_lock="requirements.lock",
         python_version="3.12",
@@ -109,6 +111,8 @@ class Flux2KleinEngine(Engine):
 
     def __init__(self) -> None:
         self._model: Any = None
+        self._kind = ""
+        self._q_dir: Path | None = None
         self._job: dict[str, Any] = {}
 
     # ---- control plane ----
@@ -213,15 +217,31 @@ class Flux2KleinEngine(Engine):
         return out
 
     def load(self, ctx: RuntimeContext) -> None:
-        q_dir = ctx.model_dir / Q_DIR
         if _prepared(ctx.model_dir) is None:
             raise EngineError(
                 "not_prepared",
                 "FLUX.2 Klein was not prepared on this Mac. Remove it and install it again.",
             )
         _quiet_library_logs()
-        from mflux.models.flux2.variants import Flux2KleinEdit
+        import mlx.core as mx
 
+        # MLX keeps freed buffers in a cache. On the M2 a 1 GB limit cut the
+        # process's peak footprint from 10.0 GB to 6.3 GB at the same speed.
+        _call(mx, "set_cache_limit", CACHE_LIMIT_BYTES)
+        self._q_dir = ctx.model_dir / Q_DIR
+        self._use("image.generate")
+
+    def _use(self, task: str) -> Any:
+        """mflux has one class for text-to-image and another for editing (it needs at
+        least one reference). Keep only the one in use: each holds the 4-bit weights."""
+        kind = "edit" if task == "image.edit" else "generate"
+        if self._model is not None and self._kind == kind:
+            return self._model
+        from mflux.models.flux2.variants import Flux2Klein, Flux2KleinEdit
+
+        if self._model is not None:
+            self._model = None
+            _clear_cache()
         engine = self
 
         class Steps:  # mflux in-loop callback: progress and cooperative cancel
@@ -234,11 +254,14 @@ class Flux2KleinEngine(Engine):
                 n = job["steps"]
                 job["ctx"].report_progress((t + 1) / (n + 1), f"Step {t + 1} of {n}")
 
-        self._model = Flux2KleinEdit(model_path=str(q_dir))
+        cls = Flux2KleinEdit if kind == "edit" else Flux2Klein
+        self._model = cls(model_path=str(self._q_dir))
         self._model.callbacks.register(Steps())
+        self._kind = kind
+        return self._model
 
     def run(self, task: str, inputs: dict[str, Any], ctx: RunContext) -> RunResult:
-        assert self._model is not None, "load() not called"
+        assert self._q_dir is not None, "load() not called"
         import mlx.core as mx
         import numpy as np
 
@@ -250,11 +273,17 @@ class Flux2KleinEngine(Engine):
             _reset_peak(mx)
             self._job = {"ctx": ctx, "steps": inputs["steps"]}
             started = time.perf_counter()
-            result = self._model.generate_image(
-                seed=inputs["seed"], prompt=inputs["prompt"],
-                num_inference_steps=inputs["steps"], guidance=inputs["guidance"],
-                width=inputs["width"], height=inputs["height"], image_paths=paths,
-            )  # fmt: skip
+            model = self._use(task)
+            common = {
+                "seed": inputs["seed"], "prompt": inputs["prompt"],
+                "num_inference_steps": inputs["steps"], "guidance": inputs["guidance"],
+                "width": inputs["width"], "height": inputs["height"],
+            }  # fmt: skip
+            result = (
+                model.generate_image(**common, image_paths=paths)
+                if paths
+                else model.generate_image(**common)
+            )
             elapsed = time.perf_counter() - started
         finally:
             self._job = {}
@@ -290,6 +319,7 @@ class Flux2KleinEngine(Engine):
 
     def unload(self) -> None:
         self._model = None
+        self._kind = ""
 
 
 def _prepared(model_dir: Path) -> dict[str, Any] | None:
@@ -317,18 +347,27 @@ def _prepare_references(refs: list[dict[str, Any]], out_dir: Path) -> list[str]:
     return paths
 
 
-def _reset_peak(mx: Any) -> None:
+def _call(mx: Any, name: str, *args: Any) -> Any:
+    """Call an MLX memory function wherever this MLX version keeps it."""
     for owner in (mx, getattr(mx, "metal", None)):
-        if owner is not None and hasattr(owner, "reset_peak_memory"):
-            owner.reset_peak_memory()
-            return
+        if owner is not None and hasattr(owner, name):
+            return getattr(owner, name)(*args)
+    return None
+
+
+def _clear_cache() -> None:
+    import mlx.core as mx
+
+    _call(mx, "clear_cache")
+
+
+def _reset_peak(mx: Any) -> None:
+    _call(mx, "reset_peak_memory")
 
 
 def _peak(mx: Any) -> int | None:
-    for owner in (mx, getattr(mx, "metal", None)):
-        if owner is not None and hasattr(owner, "get_peak_memory"):
-            return int(owner.get_peak_memory())
-    return None
+    peak = _call(mx, "get_peak_memory")
+    return int(peak) if peak is not None else None
 
 
 def _quiet_library_logs() -> None:

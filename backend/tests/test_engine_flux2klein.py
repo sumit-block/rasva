@@ -70,21 +70,25 @@ class FakeRuntime:
             def register(self, cb):
                 self.items.append(cb)
 
-        class Edit:
+        class Model:
+            kind = ""
+
             def __init__(self, model_path=None, quantize=None):
-                rt.built.append(("edit", model_path, quantize))
+                rt.built.append((self.kind, model_path, quantize))
                 self.callbacks = Callbacks()
 
             def generate_image(self, **kw):
-                rt.calls.append(kw)
+                rt.calls.append({"model": self.kind, **kw})
                 for t in range(kw["num_inference_steps"]):
                     for cb in self.callbacks.items:
                         cb.call_in_loop(t, kw["seed"], kw["prompt"], None, None, None)
                 return types.SimpleNamespace(image=Img(rt.pixels))
 
-        class Klein:
-            def __init__(self, model_path=None, quantize=None):
-                rt.built.append(("klein", model_path, quantize))
+        class Edit(Model):
+            kind = "edit"
+
+        class Klein(Model):
+            kind = "klein"
 
             def save_model(self, base_path):
                 rt.saved_to.append(base_path)
@@ -97,6 +101,8 @@ class FakeRuntime:
         mx = types.ModuleType("mlx.core")
         mx.reset_peak_memory = lambda: setattr(rt, "reset", True)
         mx.get_peak_memory = lambda: 5 * 1024**3
+        mx.set_cache_limit = lambda n: setattr(rt, "cache_limit", n)
+        mx.clear_cache = lambda: setattr(rt, "cleared", rt.__dict__.get("cleared", 0) + 1)
         mlx = types.ModuleType("mlx")
         mlx.core = mx
         pil = types.ModuleType("PIL")
@@ -273,10 +279,11 @@ def test_load_requires_the_prepared_copy(fake, tmp_path):
 def test_generates_with_progress_seed_and_clean_png(fake, tmp_path):
     rt = fake()
     engine = loaded(tmp_path)
-    assert rt.built == [("edit", str(tmp_path / "model" / K.Q_DIR), None)]
+    assert rt.built == [("klein", str(tmp_path / "model" / K.Q_DIR), None)]
+    assert rt.cache_limit == K.CACHE_LIMIT_BYTES
     result, out, progress = run(engine, tmp_path, seed=11, width=512, height=512)
     (call,) = rt.calls
-    assert call["seed"] == 11 and call["image_paths"] is None
+    assert call["model"] == "klein" and call["seed"] == 11 and "image_paths" not in call
     assert call["num_inference_steps"] == 4 and (call["width"], call["height"]) == (512, 512)
     assert (out / "image.png").is_file() and rt.reset
     assert [d for _, d in progress][1:5] == [f"Step {k} of 4" for k in range(1, 5)]
@@ -297,7 +304,12 @@ def test_edit_passes_prepared_references_in_role_order(fake, tmp_path):
     result, out, _ = run(engine, tmp_path, task="image.edit", references=refs)
     assert rt.opened == [refs[1]["path"], refs[0]["path"]]  # person first
     assert rt.thumb == (K.REFERENCE_MAX_SIDE, K.REFERENCE_MAX_SIDE)
-    assert len(rt.calls[0]["image_paths"]) == 2
+    assert rt.calls[0]["model"] == "edit" and len(rt.calls[0]["image_paths"]) == 2
+    # The editing model replaced the text-to-image one: only one is ever loaded.
+    q4 = str(tmp_path / "model" / K.Q_DIR)
+    assert rt.built == [("klein", q4, None), ("edit", q4, None)] and rt.cleared == 1
+    run(engine, tmp_path, task="image.edit", references=refs)
+    assert len(rt.built) == 2  # same task again: no reload
     assert not (out / ".references").exists()  # temporary copies removed
     assert result.outputs[0].metadata["source_asset_ids"] == ["p", "g"]
 

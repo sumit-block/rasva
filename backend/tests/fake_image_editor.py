@@ -42,12 +42,12 @@ def png_bytes(rgb: tuple[int, int, int], size: int = SIZE) -> bytes:
     ])  # fmt: skip
 
 
-class FakePainter(StableDiffusion15Engine):
+class FakeImageEditor(StableDiffusion15Engine):
     descriptor = EngineDescriptor(
         **{
             **StableDiffusion15Engine.descriptor.model_dump(),
-            "id": "test-painter",
-            "display_name": "Test painter",
+            "id": "test-image-editor",
+            "display_name": "Test image editor",
             "summary": "Paints flat colours instead of pictures (tests only).",
             "tasks": ["image.generate", "image.edit"],
             "features": ["prompt", "negative_prompt", "seed", "presets", "low_memory"],

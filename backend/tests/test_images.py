@@ -14,9 +14,9 @@ from rasva.engines.sd15 import StableDiffusion15Engine
 from rasva.services import cleanup, image_export
 from rasva.services import images as image_svc
 from tests.conftest import make_client, wait_for
-from tests.fake_painter import png_bytes
+from tests.fake_image_editor import png_bytes
 
-PAINTER = "tests.fake_painter:FakePainter"
+PAINTER = "tests.fake_image_editor:FakeImageEditor"
 TERMINAL = {"completed", "failed", "canceled", "interrupted"}
 API = "/api/v1"
 LATER = time.time() + 3 * 86_400  # "now" for cleanup: everything is days old
@@ -34,7 +34,7 @@ def pid(c):
 
 
 def generate(c, pid, prompt="a lighthouse at dusk", **extra):
-    body = {"project_id": pid, "task": "image.generate", "engine_id": "test-painter",
+    body = {"project_id": pid, "task": "image.generate", "engine_id": "test-image-editor",
             "inputs": {"prompt": prompt, "preset": "quick"}, **extra}  # fmt: skip
     r = c.post(f"{API}/jobs", json=body)
     assert r.status_code == 201, r.text
@@ -86,7 +86,7 @@ def test_versions_group_variations_and_same_seed(c, pid):
 
     # Explicit version_of on POST /jobs joins the group too.
     r = c.post(f"{API}/jobs", json={"project_id": pid, "task": "image.generate",
-                                     "engine_id": "test-painter", "version_of": first["id"],
+                                     "engine_id": "test-image-editor", "version_of": first["id"],
                                      "inputs": {"prompt": "edited by hand"}})  # fmt: skip
     hand = wait_for(c, r.json()["id"], TERMINAL)
     assert group_with(c, pid, hand["id"])["id"] == g["id"]
@@ -110,7 +110,7 @@ def test_favourite_is_current_and_validated(c, pid):
 def test_version_of_must_be_an_image_in_the_same_project(c, pid):
     first = generate(c, pid)
     other = c.post(f"{API}/projects", json={"name": "Else", "module": "image"}).json()["id"]
-    body = {"project_id": other, "task": "image.generate", "engine_id": "test-painter",
+    body = {"project_id": other, "task": "image.generate", "engine_id": "test-image-editor",
             "version_of": first["id"], "inputs": {"prompt": "x"}}  # fmt: skip
     r = c.post(f"{API}/jobs", json=body)
     assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_version"
@@ -124,7 +124,7 @@ def test_edits_of_the_same_references_are_versions(c, pid):
 
     def edit(prompt, refs):
         inputs = {"prompt": prompt, "references": refs}
-        body = {"project_id": pid, "task": "image.edit", "engine_id": "test-painter"}
+        body = {"project_id": pid, "task": "image.edit", "engine_id": "test-image-editor"}
         r = c.post(f"{API}/jobs", json={**body, "inputs": inputs})
         assert r.status_code == 201, r.text
         return wait_for(c, r.json()["id"], TERMINAL)
@@ -185,7 +185,7 @@ def test_cleanup_offers_only_older_non_favourite_versions(c, pid, settings):
     # An older version used as the source of an edit is kept.
     source = again(c, no_fav[0]["id"])
     edit = c.post(f"{API}/jobs", json={"project_id": pid, "task": "image.edit",
-                                        "engine_id": "test-painter", "inputs": {
+                                        "engine_id": "test-image-editor", "inputs": {
                                             "prompt": "x", "references": [
                                                 {"asset_id": source["outputs"][0],
                                                  "role": "person"}]}})  # fmt: skip
@@ -245,7 +245,7 @@ def test_interrupted_image_job_retries_with_same_seed(settings, monkeypatch):
     with make_client(settings, extra_engines=(PAINTER,)) as c:
         pid = c.post(f"{API}/projects", json={"name": "P", "module": "image"}).json()["id"]
         r = c.post(f"{API}/jobs", json={"project_id": pid, "task": "image.generate",
-                                         "engine_id": "test-painter",
+                                         "engine_id": "test-image-editor",
                                          "inputs": {"prompt": "a cat", "seed": 1234}})  # fmt: skip
         job = wait_for(c, r.json()["id"], {"processing"})
     # Simulate a hard stop (power loss): the row is still "processing" at next start.
@@ -288,14 +288,14 @@ def test_low_memory_mode_reaches_engines_that_support_it(c, pid):
 
 
 def test_low_memory_is_not_sent_to_engines_without_the_feature():
-    from tests.fake_painter import FakePainter
+    from tests.fake_image_editor import FakeImageEditor
 
     mem = sqlite3.connect(":memory:")
     mem.row_factory = sqlite3.Row
     mem.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
     mem.execute("INSERT INTO settings VALUES ('image.low_memory', 'true', '')")
     assert image_svc.engine_extras(mem, StableDiffusion15Engine.descriptor) == {}
-    assert image_svc.engine_extras(mem, FakePainter.descriptor) == {"low_memory": True}
+    assert image_svc.engine_extras(mem, FakeImageEditor.descriptor) == {"low_memory": True}
 
 
 # ------------------------------------------------------------------ export
@@ -311,7 +311,7 @@ def test_png_export_with_and_without_details(c, pid):
     assert f'filename="rasva-image-seed-{seed}.png"' in labelled.headers["content-disposition"]
     text = image_export.text_chunks(labelled.content)
     assert "AI-generated" in text["Comment"] and f"Seed {seed}" in text["Comment"]
-    assert "Test painter" in text["Source"]
+    assert "Test image editor" in text["Source"]
     assert b"private description" not in labelled.content
 
     bare = c.get(f"{API}/assets/{aid}/export", params={"details": "false"}).content

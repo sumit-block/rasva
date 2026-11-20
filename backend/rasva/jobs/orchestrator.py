@@ -30,6 +30,7 @@ from rasva.engines.registry import EngineRegistry, RegisteredEngine
 from rasva.jobs import repository as repo
 from rasva.jobs.events import EventBus
 from rasva.jobs.states import TERMINAL, InvalidTransition, JobState
+from rasva.logging_setup import rotate_if_large
 from rasva.services import assets as asset_svc
 from rasva.services import projects as project_svc
 from rasva.services.installer import (
@@ -417,7 +418,9 @@ class Orchestrator:
         env["PYTHONUNBUFFERED"] = "1"
         log_dir = self._paths.logs / "engines"
         log_dir.mkdir(parents=True, exist_ok=True)
-        with (log_dir / f"{d.id}.log").open("ab") as stderr:
+        log_path = log_dir / f"{d.id}.log"
+        rotate_if_large(log_path)
+        with log_path.open("ab") as stderr:
             proc = await asyncio.create_subprocess_exec(
                 engine.python_executable(self._paths.envs),
                 "-m",

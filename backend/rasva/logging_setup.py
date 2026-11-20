@@ -48,3 +48,15 @@ def setup_logging(log_dir: Path, level: int = logging.INFO) -> None:
     console._rasva = True  # type: ignore[attr-defined]
     root.addHandler(file_handler)
     root.addHandler(console)
+
+
+ENGINE_LOG_MAX_BYTES = 5 * 1024 * 1024
+
+
+def rotate_if_large(path: Path, max_bytes: int = ENGINE_LOG_MAX_BYTES) -> None:
+    """Keep one previous engine log; engine stderr is appended across runs."""
+    try:
+        if path.stat().st_size > max_bytes:
+            path.replace(path.with_suffix(path.suffix + ".1"))
+    except FileNotFoundError:
+        pass

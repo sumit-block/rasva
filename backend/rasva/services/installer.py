@@ -44,6 +44,7 @@ from rasva.db import dumps, loads, utcnow
 from rasva.engines.contract import EngineDescriptor, InstallContext, ModelArtifact
 from rasva.engines.registry import EngineRegistry, RegisteredEngine, load_class
 from rasva.jobs.states import JobState
+from rasva.logging_setup import rotate_if_large
 from rasva.security import LOOPBACK_NAMES
 from rasva.services.settings_store import SettingsStore
 from rasva.services.storage import StorageService, disk_usage_bytes
@@ -373,6 +374,7 @@ class EnvironmentBuilder:
         env["UV_PYTHON_INSTALL_DIR"] = str(self._paths.envs / ".python")
         log_path = self._paths.logs / "engines" / f"{engine_id}-install.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        rotate_if_large(log_path)
         try:
             python = python_version or sys.executable
             await self._run(

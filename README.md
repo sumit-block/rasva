@@ -154,9 +154,11 @@ pronunciation entry does not mark existing takes as outdated.
 | Item | Status |
 | --- | --- |
 | Paired home Wi-Fi access | Done: local CA, encrypted HTTPS port, QR + 6-digit pairing, device list and removal, owner-only actions ([ADR-0004](docs/adr/0004-lan-access-security.md)) |
-| Quality presets · automatic engine choice | Not started |
-| Storage cleanup tools · long-running job recovery checks | Not started |
-| Mac sleep guidance · offline test · privacy audit | Partly: sleep/lid guidance shown when Wi-Fi access is on |
+| Quality presets · automatic engine choice | Done: per-language recommendation from your own ratings (else default voice) with the reason shown; presets only for engines that have them; export presets |
+| Storage cleanup | Done: previews, removed-sentence audio, temp files, replaced versions, older exports, paused downloads, unrecognised files; originals and in-use audio never offered; missing files reported |
+| Privacy audit | Done (automated): private text never reaches logs; engine logs rotate; Kokoro's text-quoting warnings suppressed |
+| Offline test | Done (automated, app process): no outbound connections during normal use; engine workers run with offline flags; UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off |
+| Mac sleep guidance | Shown when Wi-Fi access is on |
 | Usability testing · release checklist | Needs people and the M2 |
 
 To use Rasva from a phone: on the Mac, open Settings → Phone & other devices →

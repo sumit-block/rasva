@@ -98,6 +98,19 @@ _WEIGHTS_BYTES = sum(a.size_bytes for a in _ARTIFACTS)
 _ENV_ESTIMATE_BYTES = 1_600 * 1024**2
 
 
+def _quiet_library_logs() -> None:
+    """kokoro/misaki log warnings that quote phonemes of the user's script; keep
+    only errors so engine logs don't hold private text (PRD §27)."""
+    try:
+        import sys
+
+        from loguru import logger
+    except ImportError:
+        return
+    logger.remove()
+    logger.add(sys.stderr, level="ERROR")
+
+
 class KokoroEngine(Engine):
     descriptor = EngineDescriptor(
         id="kokoro-82m",
@@ -204,6 +217,7 @@ class KokoroEngine(Engine):
         }
 
     def load(self, ctx: RuntimeContext) -> None:
+        _quiet_library_logs()
         from kokoro import KModel  # heavy import: worker process only
 
         self._model_dir = ctx.model_dir

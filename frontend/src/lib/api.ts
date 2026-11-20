@@ -119,6 +119,8 @@ export interface EngineInfo {
   compatibility: { compatible: boolean; reasons: string[] };
   voices: Voice[];
   license_notes: string[];
+  default_voices: Record<string, string>;
+  presets: { id: string; label: string; description: string }[];
 }
 
 export type AppSettings = {
@@ -406,6 +408,7 @@ export interface ChapterSettings {
   voice_id: string;
   speed: number;
   use_dictionary: boolean;
+  preset?: string | null;
 }
 
 export interface Chapter {
@@ -523,5 +526,15 @@ export const cleanup = {
   run: (groups: string[]) =>
     request<CleanupPlan & { freed_bytes: number }>("/storage/cleanup", { method: "POST", body: json({ groups }) }),
 };
+
+export interface Recommendation {
+  engine_id: string;
+  voice_id: string;
+  reason: string;
+  evidence: { quality: number; rated: number; experiment_id: string; experiment_name: string } | null;
+}
+
+export const recommendation = (language: "hi" | "en") =>
+  request<Recommendation>(`/audio/recommendation?language=${language}`);
 
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

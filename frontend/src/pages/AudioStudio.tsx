@@ -14,6 +14,7 @@ import {
   chapters,
   isUsable,
   pronunciations,
+  recommendation,
   TERMINAL_STATES,
   type AppliedPronunciation,
   type Chapter,
@@ -132,7 +133,13 @@ function PronunciationCheck({ text, language, projectId, enabled, onToggle }: {
   );
 }
 
-function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; projects: Project[]; reloadProjects: () => Promise<void> }) {
+function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; projects: Project[]; reloadProjects: () => Promise<void> }) {
+  const [engineId, setEngineId] = useState(engines[0]!.id);
+  const engine = engines.find((e) => e.id === engineId) ?? engines[0]!;
+  const [preset, setPreset] = useState("");
+  const [recommended, setRecommended] = useState<string>();
+  // Once you pick a voice yourself (or a chapter already has audio), Rasva stops choosing for you.
+  const voiceLocked = useRef(false);
   const [params, setParams] = useSearchParams();
   const { jobs, upsert } = useJobs();
   const { prefs } = usePrefs();
@@ -154,7 +161,9 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
   const lastSaved = useRef("");
   const creating = useRef<Promise<string> | null>(null);
 
-  const snapshot = (sc: string, v: string, sp: number, d: boolean) => JSON.stringify([sc, v, sp, d]);
+  const snapshot = (sc: string, v: string, sp: number, d: boolean, e = engineId, pr = preset) =>
+    JSON.stringify([sc, v, sp, d, e, pr]);
+  const currentSettings = () => ({ engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary, preset });
 
   // Load the selected chapter, and keep it fresh while it is generating or exporting.
   useEffect(() => {
@@ -183,10 +192,15 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     if (chapter && loadedFor.current !== chapter.id) {
       loadedFor.current = chapter.id;
       setScript(chapter.script);
+      const known = engines.some((e) => e.id === chapter.settings.engine_id);
+      if (known) setEngineId(chapter.settings.engine_id);
       setVoiceId(chapter.settings.voice_id);
       setSpeed(chapter.settings.speed);
       setUseDictionary(chapter.settings.use_dictionary);
-      lastSaved.current = snapshot(chapter.script, chapter.settings.voice_id, chapter.settings.speed, chapter.settings.use_dictionary);
+      setPreset(chapter.settings.preset ?? "");
+      voiceLocked.current = chapter.segments.some((seg) => seg.current);
+      lastSaved.current = snapshot(chapter.script, chapter.settings.voice_id, chapter.settings.speed,
+        chapter.settings.use_dictionary, known ? chapter.settings.engine_id : engineId, chapter.settings.preset ?? "");
       setSaved("idle");
     } else if (!chapterId && project && chapterList.data && loadedFor.current !== `project:${project.id}`) {
       loadedFor.current = `project:${project.id}`;
@@ -208,7 +222,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
       const target = project ?? (await createProject());
       const created = await chapters.create(target.id, {
         title: "Chapter 1", script,
-        settings: { engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary },
+        settings: currentSettings(),
       });
       loadedFor.current = created.id; // keep the typed draft
       lastSaved.current = snapshot(script, voiceId, speed, useDictionary);
@@ -229,7 +243,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     const snap = snapshot(script, voiceId, speed, useDictionary);
     if (snap === lastSaved.current) return id;
     const updated = await chapters.update(id, {
-      script, settings: { engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary },
+      script, settings: currentSettings(),
     });
     lastSaved.current = snap;
     setChapter(updated);
@@ -242,13 +256,46 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
     if (!script.trim() && !chapterId) return;
     if (chapterId && loadedFor.current !== chapterId) return;
     if (snapshot(script, voiceId, speed, useDictionary) === lastSaved.current) return;
+    if (!script.trim() && !chapterId) return;
     setSaved("saving");
     const t = window.setTimeout(() => {
       save().then(() => setSaved("saved"), () => setSaved("error"));
     }, 1000);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [script, voiceId, speed, useDictionary, chapterId]);
+  }, [script, voiceId, speed, useDictionary, engineId, preset, chapterId]);
+
+  // Simple mode: pick the best installed engine and voice for the script's language.
+  const scriptLanguage: "hi" | "en" | null = script.trim() ? (hasDevanagari(script) ? "hi" : "en") : null;
+  useEffect(() => {
+    if (!scriptLanguage || voiceLocked.current || prefs.mode !== "simple") return;
+    let alive = true;
+    recommendation(scriptLanguage).then((r) => {
+      if (!alive || voiceLocked.current || !engines.some((e) => e.id === r.engine_id)) return;
+      setEngineId(r.engine_id);
+      setVoiceId(r.voice_id);
+      setRecommended(r.reason);
+    }, () => setRecommended(undefined));
+    return () => {
+      alive = false;
+    };
+  }, [scriptLanguage, prefs.mode, engines]);
+
+  const chooseVoice = (id: string) => {
+    voiceLocked.current = true;
+    setRecommended(undefined);
+    setVoiceId(id);
+  };
+  const chooseEngine = (id: string) => {
+    const next = engines.find((e) => e.id === id);
+    if (!next) return;
+    voiceLocked.current = true;
+    setRecommended(undefined);
+    setEngineId(id);
+    setPreset("");
+    const lang = scriptLanguage ?? "en";
+    setVoiceId(next.default_voices[lang] ?? next.voices.find((v) => v.language === lang)?.id ?? next.voices[0]?.id ?? "");
+  };
 
   const voice = engine.voices.find((v) => v.id === voiceId);
   const devanagariWithEnglish = voice?.language === "en" && hasDevanagari(script);
@@ -276,7 +323,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
       upsert(await api.createJob({
         project_id: pid, task: "audio.narrate", engine_id: engine.id,
         // Only the first sentence is spoken; send a bounded excerpt.
-        inputs: { text: script.slice(0, 1000), voice_id: voiceId, speed, preview: true, use_dictionary: useDictionary },
+        inputs: { text: script.slice(0, 1000), voice_id: voiceId, speed, preview: true, use_dictionary: useDictionary, ...(preset ? { preset } : {}) },
       }));
     });
 
@@ -292,7 +339,7 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
       const n = (chapterList.data?.length ?? 0) + 1;
       const created = await chapters.create(target.id, {
         title: `Chapter ${n}`, script: "",
-        settings: { engine_id: engine.id, voice_id: voiceId, speed, use_dictionary: useDictionary },
+        settings: currentSettings(),
       });
       await chapterList.reload();
       setParams({ project: target.id, chapter: created.id });
@@ -376,8 +423,33 @@ function Studio({ engine, projects, reloadProjects }: { engine: EngineInfo; proj
         <Card>
           <CardTitle>Voice</CardTitle>
           <CardDescription>{engine.display_name}: {engine.summary}</CardDescription>
-          <div className="mt-4"><VoicePicker voices={engine.voices} value={voiceId} onChange={setVoiceId} /></div>
-          {prefs.mode === "advanced" && engine.features.includes("speed") && (
+          {recommended && prefs.mode === "simple" && (
+            <p className="mt-3 rounded-lg bg-accent/10 p-2 text-xs text-fg">Chosen for you · {recommended}</p>
+          )}
+          {prefs.mode === "advanced" && engines.length > 1 && (
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block font-medium">Engine</span>
+              <select value={engine.id} onChange={(e) => chooseEngine(e.target.value)} className="min-h-11 w-full rounded-lg border border-border bg-bg px-3">
+                {engines.map((e) => <option key={e.id} value={e.id}>{e.display_name}</option>)}
+              </select>
+            </label>
+          )}
+          <div className="mt-4"><VoicePicker voices={engine.voices} value={voiceId} onChange={chooseVoice} /></div>
+          {engine.presets.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-1 text-sm font-medium">Quality</p>
+              <div role="radiogroup" aria-label="Quality" className="grid gap-2">
+                {[...engine.presets, ...(prefs.mode === "advanced" ? [{ id: "", label: "Custom", description: "Use the settings below." }] : [])].map((p) => (
+                  <button key={p.id || "custom"} role="radio" aria-checked={preset === p.id} onClick={() => setPreset(p.id)}
+                    className={cn("min-h-11 rounded-lg border px-3 py-2 text-left", preset === p.id ? "border-accent bg-accent/10" : "border-border")}>
+                    <span className="block text-sm font-medium">{p.label}</span>
+                    <span className="block text-xs text-muted">{p.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {prefs.mode === "advanced" && engine.features.includes("speed") && !preset && (
             <label className="mt-4 block text-sm">
               <span className="mb-1 flex justify-between font-medium">Speed <span className="text-muted tabular-nums">{speed.toFixed(2)}×</span></span>
               <input type="range" min={0.5} max={2} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} className="w-full accent-[var(--accent)]" />
@@ -411,7 +483,10 @@ export function AudioStudioPage() {
   const models = useAsync(api.models);
   const projects = useAsync(() => api.projects({ module: "audio" }));
 
-  const engine = models.data?.find((m) => m.tasks.includes("audio.narrate") && isUsable(m));
+  const engines = useMemo(
+    () => (models.data ?? []).filter((m) => m.tasks.includes("audio.narrate") && isUsable(m)),
+    [models.data],
+  );
   const candidate = models.data?.find((m) => m.tasks.includes("audio.narrate"));
 
   if (models.error || projects.error) {
@@ -420,7 +495,7 @@ export function AudioStudioPage() {
   if (!models.data || !projects.data) {
     return <p className="text-sm text-muted">Loading…</p>;
   }
-  if (!engine) {
+  if (engines.length === 0) {
     return (
       <>
         <PageHeader title="Audio Studio" />
@@ -436,5 +511,5 @@ export function AudioStudioPage() {
       </>
     );
   }
-  return <Studio engine={engine} projects={projects.data} reloadProjects={projects.reload} />;
+  return <Studio engines={engines} projects={projects.data} reloadProjects={projects.reload} />;
 }

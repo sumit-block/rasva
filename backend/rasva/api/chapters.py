@@ -39,6 +39,8 @@ class Settings(BaseModel):
     voice_id: str | None = None
     speed: float | None = None
     use_dictionary: bool | None = None
+    # Quality preset id; empty string clears it (custom settings).
+    preset: str | None = None
 
 
 class ChapterCreate(BaseModel):

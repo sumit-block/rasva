@@ -21,6 +21,7 @@ from rasva.jobs.states import JobState
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
 from rasva.services.installer import ModelStore
+from rasva.services.presets import PresetError, apply_preset
 
 router = APIRouter(tags=["jobs"])
 
@@ -80,11 +81,18 @@ def create_job(body: JobCreate, state: State, conn: DB) -> dict[str, Any]:
         engine_id = candidates[0].descriptor.id
     raw, extras = dict(body.inputs), {}
     engine = state.registry.get(engine_id)
+    if engine is not None and raw.get("preset"):
+        try:
+            extras["preset"] = raw["preset"]
+            raw = apply_preset(engine.descriptor, raw)
+        except PresetError as exc:
+            raise ApiError(422, "invalid_preset", str(exc)) from exc
     if body.task == "audio.narrate" and engine is not None:
         # Approved pronunciations change only what the engine reads (PRD §10.2).
-        raw, extras = pronunciation_svc.prepare_narration(
+        raw, narration_extras = pronunciation_svc.prepare_narration(
             conn, engine.descriptor, body.project_id, raw
         )
+        extras.update(narration_extras)
     inputs = {**_validate(state, conn, engine_id, body.task, raw), **extras}
     job = repo.create(
         conn, project_id=body.project_id, task=body.task, engine_id=engine_id, inputs=inputs
@@ -163,8 +171,9 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
     if old["task"] == "model.remove":
         return remove_model(old["engine_id"], state, conn)
     # Retry exactly what was generated before, including its pronunciation choices.
-    extras = {k: v for k, v in old["inputs"].items() if k in pronunciation_svc.EXTRA_KEYS}
-    raw = {k: v for k, v in old["inputs"].items() if k not in pronunciation_svc.EXTRA_KEYS}
+    keep = (*pronunciation_svc.EXTRA_KEYS, "preset", "chapter_id", "segment_id")
+    extras = {k: v for k, v in old["inputs"].items() if k in keep}
+    raw = {k: v for k, v in old["inputs"].items() if k not in keep}
     inputs = {**_validate(state, conn, old["engine_id"], old["task"], raw), **extras}
     job = repo.create(
         conn,

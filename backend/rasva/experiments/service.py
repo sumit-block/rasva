@@ -28,6 +28,7 @@ from rasva.jobs.states import TERMINAL
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
 from rasva.services.installer import ModelStore
+from rasva.services.presets import PresetError, apply_preset
 
 MAX_RUNS = 600
 MAX_CANDIDATES = 8
@@ -172,9 +173,13 @@ def create(
                 d = engine.descriptor
                 skip_reason = None
                 job_id = None
-                raw, extras = pronunciation_svc.prepare_narration(
-                    conn, d, None, {**r["settings"], "text": case["text"], "preview": False}
-                )
+                try:
+                    raw = apply_preset(d, {**r["settings"], "text": case["text"], "preview": False})
+                except PresetError as exc:
+                    raise ExperimentError(str(exc)) from exc
+                raw, extras = pronunciation_svc.prepare_narration(conn, d, None, raw)
+                if r["settings"].get("preset"):
+                    extras["preset"] = r["settings"]["preset"]
                 try:
                     inputs = {
                         **load_class(engine.import_path)().validate_input(task, raw),

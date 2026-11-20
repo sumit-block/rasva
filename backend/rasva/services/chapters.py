@@ -29,9 +29,10 @@ from rasva.jobs.states import ACTIVE, JobState
 from rasva.services import projects as project_svc
 from rasva.services import pronunciations as pronunciation_svc
 from rasva.services.installer import ModelStore
+from rasva.services.presets import PresetError, apply_preset
 
 MAX_SCRIPT_CHARS = 200_000  # roughly two hours of narration
-SETTING_KEYS = ("engine_id", "voice_id", "speed", "use_dictionary")
+SETTING_KEYS = ("engine_id", "voice_id", "speed", "use_dictionary", "preset")
 GENERATE_SCOPES = ("needed", "failed", "all")
 OPEN_STATES = {JobState.QUEUED.value, JobState.DRAFT.value, *(s.value for s in ACTIVE)}
 BAD_STATES = {JobState.FAILED.value, JobState.INTERRUPTED.value}
@@ -73,12 +74,16 @@ def normalize_settings(
     conn: sqlite3.Connection, registry: EngineRegistry, settings: dict[str, Any]
 ) -> dict[str, Any]:
     engine = _engine(conn, registry, settings.get("engine_id"))
+    preset = settings.get("preset") or None
     try:
-        checked = load_class(engine.import_path)().validate_input(
-            "audio.narrate",
+        raw = apply_preset(
+            engine.descriptor,
             {"text": "Test.", "voice_id": settings.get("voice_id"),
-             "speed": settings.get("speed", 1.0)},
+             "speed": settings.get("speed", 1.0), "preset": preset},
         )  # fmt: skip
+        checked = load_class(engine.import_path)().validate_input("audio.narrate", raw)
+    except PresetError as exc:
+        raise ChapterError(str(exc)) from exc
     except EngineError as exc:
         raise ChapterError(exc.user_message) from exc
     return {
@@ -86,6 +91,7 @@ def normalize_settings(
         "voice_id": checked["voice_id"],
         "speed": checked.get("speed", 1.0),
         "use_dictionary": bool(settings.get("use_dictionary", True)),
+        "preset": preset,
     }
 
 
@@ -363,7 +369,9 @@ def _queue_take(
         "speed": settings["speed"],
         "use_dictionary": settings["use_dictionary"],
         "preview": False,
+        "preset": settings.get("preset"),
     }
+    raw = apply_preset(engine.descriptor, raw)
     raw, extras = pronunciation_svc.prepare_narration(
         conn, engine.descriptor, chapter["project_id"], raw
     )
@@ -373,6 +381,8 @@ def _queue_take(
         raise ChapterError(f"Sentence {seg['position'] + 1}: {exc.user_message}") from exc
     inputs.update(extras)
     inputs.update({"chapter_id": chapter["id"], "segment_id": seg["id"]})
+    if settings.get("preset"):
+        inputs["preset"] = settings["preset"]
     job_id = repo.insert(
         conn,
         project_id=chapter["project_id"],

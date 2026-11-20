@@ -35,6 +35,7 @@ class FakeNarrator(KokoroEngine):
             "artifacts": [],
             "requirements_lock": None,
             "voices": [v.model_dump() for v in VOICE_CATALOGUE],
+            "default_voices": {"en": "af_heart", "hi": "hf_alpha"},
         }
     )
 
@@ -69,3 +70,29 @@ class FakeNarrator(KokoroEngine):
                                 metadata={"voice_id": inputs["voice_id"], "synthetic": True})],
             metrics={"audio_s": round(duration, 3), "segments": len(segs)},
         )  # fmt: skip
+
+
+class PresetNarrator(FakeNarrator):
+    """Like FakeNarrator, but with quality presets (tests only)."""
+
+    descriptor = EngineDescriptor(
+        **{
+            **FakeNarrator.descriptor.model_dump(),
+            "id": "test-preset-narrator",
+            "display_name": "Preset narrator",
+            "presets": [
+                {
+                    "id": "fast",
+                    "label": "Fast",
+                    "description": "Quicker, rougher.",
+                    "settings": {"speed": 1.25},
+                },
+                {
+                    "id": "best",
+                    "label": "Best",
+                    "description": "Slower, cleaner.",
+                    "settings": {"speed": 0.9},
+                },
+            ],
+        }
+    )

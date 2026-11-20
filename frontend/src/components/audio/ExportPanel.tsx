@@ -70,19 +70,37 @@ export function ExportPanel({ chapter, onExported }: { chapter: Chapter; onExpor
         Joins every sentence with natural pauses{chapter.tracks.length ? ", mixes your music and effects," : ""} and levels the
         volume so nothing clips.
       </CardDescription>
-      <div className="mt-3 space-y-2 text-sm">
+      {prefs.mode === "simple" && (
+        <div role="radiogroup" aria-label="Export for" className="mt-3 grid gap-2">
+          {[
+            { id: "listen", label: "Listening", hint: chapter.mp3_available ? "WAV and a smaller MP3" : "WAV (MP3 needs FFmpeg)", mp3: chapter.mp3_available, stems: false },
+            { id: "archive", label: "Best quality", hint: "WAV only", mp3: false, stems: false },
+            ...(chapter.tracks.length ? [{ id: "edit", label: "Editing", hint: "WAV plus separate narration, music and effects", mp3: false, stems: true }] : []),
+          ].map((p) => {
+            const active = mp3 === p.mp3 && stems === p.stems;
+            return (
+              <button key={p.id} role="radio" aria-checked={active} onClick={() => { setMp3(p.mp3); setStems(p.stems); }}
+                className={`min-h-11 rounded-lg border px-3 py-2 text-left ${active ? "border-accent bg-accent/10" : "border-border"}`}>
+                <span className="block text-sm font-medium">{p.label}</span>
+                <span className="block text-xs text-muted">{p.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {prefs.mode === "advanced" && <div className="mt-3 space-y-2 text-sm">
         <label className="flex min-h-11 items-center gap-2">
           <input type="checkbox" checked={mp3} disabled={!chapter.mp3_available} onChange={(e) => setMp3(e.target.checked)} />
           Also make an MP3
           {!chapter.mp3_available && <span className="text-xs text-muted">(needs FFmpeg on this Mac)</span>}
         </label>
-        {prefs.mode === "advanced" && chapter.tracks.length > 0 && (
+        {chapter.tracks.length > 0 && (
           <label className="flex min-h-11 items-center gap-2">
             <input type="checkbox" checked={stems} onChange={(e) => setStems(e.target.checked)} />
             Separate files for narration, music and effects
           </label>
         )}
-      </div>
+      </div>}
       {missing > 0 && (
         <Notice className="mt-3">{missing} sentences don't have audio yet. Generate them first.</Notice>
       )}

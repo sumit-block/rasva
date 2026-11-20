@@ -58,6 +58,19 @@ class Voice(BaseModel):
     gender: Literal["female", "male"] | None = None
 
 
+class Preset(BaseModel):
+    """A quality preset: plain-language name for real engine settings (PRD §5.1).
+
+    Only engines with genuinely different quality settings declare presets; the
+    UI shows no preset choice for engines without them (capability honesty).
+    """
+
+    id: str = Field(pattern=r"^[a-z0-9_]{1,32}$")
+    label: str
+    description: str
+    settings: dict[str, Any]
+
+
 class EngineDescriptor(BaseModel):
     """Static capability metadata. Shown to users in plain language."""
 
@@ -87,6 +100,9 @@ class EngineDescriptor(BaseModel):
     # missing). None = same version as the Rasva app.
     python_version: str | None = None
     voices: list[Voice] = []
+    # Language -> voice used when nothing better is known (no ratings yet).
+    default_voices: dict[str, str] = {}
+    presets: list[Preset] = []
     # Third-party components with licences users should know about (PRD §28).
     license_notes: list[str] = []
 

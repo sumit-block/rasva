@@ -126,6 +126,11 @@ class KokoroEngine(Engine):
         requirements_lock="requirements.lock",
         python_version="3.12",
         voices=voices_from(_MANIFEST),
+        default_voices={
+            lang: vid
+            for lang, vid in DEFAULT_VOICE.items()
+            if any(v.id == vid for v in voices_from(_MANIFEST))
+        },
     )
 
     def __init__(self) -> None:

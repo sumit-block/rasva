@@ -1,4 +1,4 @@
-"""Experiments API (PRD §20, A1-010). Advanced mode only in the UI."""
+"""Experiments API (PRD §20, A1-010): narration and image generation. Advanced mode only."""
 
 from __future__ import annotations
 
@@ -24,9 +24,10 @@ class Candidate(BaseModel):
 class ExperimentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     objective: str = Field(default="", max_length=2000)
-    task: Literal["audio.narrate"] = "audio.narrate"
+    task: Literal["audio.narrate", "image.generate"] = "audio.narrate"
     benchmark: str | None = None
-    texts: list[str] | None = None
+    texts: list[str] | None = None  # narration: one sentence per case
+    prompts: list[str] | None = None  # images: one description per case
     candidates: list[Candidate]
 
 
@@ -74,6 +75,7 @@ def create(body: ExperimentCreate, state: State, conn: DB) -> dict[str, Any]:
         task=body.task,
         benchmark=body.benchmark,
         texts=body.texts,
+        prompts=body.prompts,
         candidates=[c.model_dump() for c in body.candidates],
     )
     for job_id in created["job_ids"]:

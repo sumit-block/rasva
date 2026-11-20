@@ -8,6 +8,7 @@ crash isolation, metrics and recovery of the rest of the app (PRD §20, A1-010).
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 from importlib import resources
 from typing import Any
@@ -16,13 +17,7 @@ from rasva.config import Paths
 from rasva.db import dumps, loads, new_id, transaction, utcnow
 from rasva.engines.contract import EngineError
 from rasva.engines.registry import EngineRegistry, RegisteredEngine, load_class
-from rasva.experiments.scoring import (
-    AUDIO_REVIEW_DIMENSIONS,
-    AUDIO_WEIGHTS,
-    CandidateView,
-    RunView,
-    summarize,
-)
+from rasva.experiments.scoring import CandidateView, RunView, profile_for, summarize
 from rasva.jobs import repository as repo
 from rasva.jobs.states import TERMINAL
 from rasva.services import projects as project_svc
@@ -33,6 +28,12 @@ from rasva.services.presets import PresetError, apply_preset
 MAX_RUNS = 600
 MAX_CANDIDATES = 8
 MAX_CUSTOM_CASES = 100
+NARRATE = "audio.narrate"
+IMAGE = "image.generate"
+TASKS = (NARRATE, IMAGE)
+# Seeds for custom prompts: one per prompt, shared by every candidate. Kept
+# below 2**31 so any engine's seed range accepts it.
+MAX_CASE_SEED = 2**31 - 1
 
 
 class ExperimentError(ValueError):
@@ -110,28 +111,48 @@ def create(
     candidates: list[dict[str, Any]],
     benchmark: str | None = None,
     texts: list[str] | None = None,
+    prompts: list[str] | None = None,
 ) -> dict[str, Any]:
-    if task != "audio.narrate":
-        raise ExperimentError("Only narration experiments are supported so far.")
-    if bool(benchmark) == bool(texts):
-        raise ExperimentError("Choose a benchmark or enter your own sentences (not both).")
+    if task not in TASKS:
+        raise ExperimentError("Experiments support narration and image generation only.")
+    image = task == IMAGE
+    custom = prompts if image else texts
+    noun = "descriptions" if image else "sentences"
+    if texts if image else prompts:
+        raise ExperimentError(
+            "Use prompts for image experiments and texts for narration experiments."
+        )
+    if bool(benchmark) == bool(custom):
+        raise ExperimentError(f"Choose a benchmark or enter your own {noun} (not both).")
     if benchmark:
         bench = load_benchmark(benchmark)
         if bench["task"] != task:
             raise ExperimentError("That benchmark is for a different task.")
         cases = bench["cases"]
     else:
-        lines = [t.strip() for t in texts or [] if t.strip()]
+        lines = [" ".join(t.split()) for t in custom or [] if t.strip()]
         if not lines:
-            raise ExperimentError("Enter at least one sentence.")
+            raise ExperimentError(f"Enter at least one {noun[:-1]}.")
         if len(lines) > MAX_CUSTOM_CASES:
-            raise ExperimentError(f"Use at most {MAX_CUSTOM_CASES} sentences.")
-        cases = [
-            {"id": f"c{i:03d}", "category": "custom", "text": t, "focus": ""}
-            for i, t in enumerate(lines, 1)
-        ]
+            raise ExperimentError(f"Use at most {MAX_CUSTOM_CASES} {noun}.")
+        if image:
+            # One seed per prompt, chosen now, so every candidate gets the same noise.
+            cases = [
+                {"id": f"c{i:03d}", "category": "custom", "prompt": t,
+                 "seed": secrets.randbelow(MAX_CASE_SEED + 1), "focus": ""}
+                for i, t in enumerate(lines, 1)
+            ]  # fmt: skip
+        else:
+            cases = [
+                {"id": f"c{i:03d}", "category": "custom", "text": t, "focus": ""}
+                for i, t in enumerate(lines, 1)
+            ]
     if not candidates:
-        raise ExperimentError("Choose at least one engine and voice to compare.")
+        raise ExperimentError(
+            "Choose at least one engine and setting to compare."
+            if image
+            else "Choose at least one engine and voice to compare."
+        )
     if len(candidates) > MAX_CANDIDATES:
         raise ExperimentError(f"Compare at most {MAX_CANDIDATES} candidates at once.")
     if len(cases) * len(candidates) > MAX_RUNS:
@@ -145,6 +166,10 @@ def create(
         if not _usable(conn, engine):
             raise ExperimentError(f"{engine.descriptor.display_name} is not installed.")
         settings = {k: v for k, v in (c.get("settings") or {}).items() if k != "preview"}
+        if image and {"prompt", "seed"} & set(settings):
+            raise ExperimentError(
+                "The description and seed come from each test case, not from a candidate."
+            )
         key = candidate_key(engine.descriptor.id, settings)
         if any(r["key"] == key for r in resolved):
             raise ExperimentError("The same engine and settings were chosen twice.")
@@ -155,7 +180,11 @@ def create(
     job_ids: list[str] = []
     with transaction(conn):
         project = project_svc.create(
-            conn, paths, name=f"Experiment: {name}", module="audio", kind="experiment"
+            conn,
+            paths,
+            name=f"Experiment: {name}",
+            module="image" if image else "audio",
+            kind="experiment",
         )
         conn.execute(
             "INSERT INTO experiments(id, project_id, name, objective, task, benchmark,"
@@ -173,11 +202,19 @@ def create(
                 d = engine.descriptor
                 skip_reason = None
                 job_id = None
+                case_inputs = (
+                    {"prompt": case["prompt"], "seed": case["seed"]}
+                    if image
+                    else {"text": case["text"], "preview": False}
+                )
                 try:
-                    raw = apply_preset(d, {**r["settings"], "text": case["text"], "preview": False})
+                    raw = apply_preset(d, {**r["settings"], **case_inputs})
                 except PresetError as exc:
                     raise ExperimentError(str(exc)) from exc
-                raw, extras = pronunciation_svc.prepare_narration(conn, d, None, raw)
+                if image:
+                    extras: dict[str, Any] = {}
+                else:
+                    raw, extras = pronunciation_svc.prepare_narration(conn, d, None, raw)
                 if r["settings"].get("preset"):
                     extras["preset"] = r["settings"]["preset"]
                 try:
@@ -250,11 +287,14 @@ def get(
     for r in rows:
         inputs = loads(r["job_inputs"], {}) or {}
         case = (cases or {}).get(r["case_id"])
+        # "text" carries the sentence (narration) or the description (images).
+        text_key = "prompt" if exp["task"] == IMAGE else "text"
         runs.append({
             "id": r["id"],
             "case_id": r["case_id"],
             "category": r["category"],
-            "text": case["text"] if case else inputs.get("text"),
+            "text": case[text_key] if case else inputs.get(text_key),
+            "seed": case.get("seed") if case else inputs.get("seed"),
             "focus": case["focus"] if case else "",
             "candidate_key": r["candidate_key"],
             "engine_id": r["engine_id"],
@@ -289,11 +329,12 @@ def get(
                 usability=exp["usability"].get(c["key"]),
             )
         )
-    summary = [s.as_dict() for s in summarize(views, total_memory)]
+    profile = profile_for(exp["task"])
+    summary = [s.as_dict() for s in summarize(views, total_memory, profile)]
     return {
         **exp,
-        "review_dimensions": list(AUDIO_REVIEW_DIMENSIONS),
-        "weights": AUDIO_WEIGHTS,
+        "review_dimensions": list(profile.dimensions),
+        "weights": profile.weights,
         "runs": runs,
         "summary": summary,
     }
@@ -306,7 +347,8 @@ def set_scores(
     conn: sqlite3.Connection, experiment_id: str, run_id: str, scores: dict[str, int | None]
 ) -> None:
     run = conn.execute(
-        "SELECT r.id, r.skip_reason, j.state FROM experiment_runs r"
+        "SELECT r.id, r.skip_reason, j.state, e.task FROM experiment_runs r"
+        " JOIN experiments e ON e.id = r.experiment_id"
         " LEFT JOIN jobs j ON j.id = r.job_id WHERE r.id = ? AND r.experiment_id = ?",
         (run_id, experiment_id),
     ).fetchone()
@@ -314,7 +356,7 @@ def set_scores(
         raise ExperimentNotFound(run_id)
     if run["state"] != "completed":
         raise ExperimentError("Only finished results can be rated.")
-    unknown = set(scores) - set(AUDIO_REVIEW_DIMENSIONS)
+    unknown = set(scores) - set(profile_for(run["task"]).dimensions)
     if unknown:
         raise ExperimentError(f"Unknown review dimension(s): {sorted(unknown)}")
     now = utcnow()

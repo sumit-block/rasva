@@ -4,6 +4,9 @@ Pure functions: no database, no I/O. Quality comes from human review (1-5);
 efficiency and storage are normalised against the best candidate in the same
 experiment; reliability is the share of finished runs that succeeded.
 
+Each task has a scoring profile: its review dimensions, its PRD weights, the
+metric that measures processing speed and how peak memory is read.
+
 Mandatory gates (licence, memory, reliability) always override weighted
 scores: a candidate that fails a gate is never "recommended", whatever it scores.
 """
@@ -27,6 +30,61 @@ AUDIO_WEIGHTS = {
     },
     "final": {"quality": 0.70, "efficiency": 0.10, "reliability": 0.15, "storage": 0.05},
 }
+
+# PRD §20.2 (PRD v1.1 in Confluence). Quality subdimensions are the PRD's six,
+# verbatim. Identity, pose and garment similarity assume a reference photo, which
+# text-to-image (I0) does not have: reviewers rate only what applies, and a run
+# counts as rated once it has any score.
+IMAGE_REVIEW_DIMENSIONS = (
+    "identity",
+    "proportions",
+    "pose",
+    "garment_similarity",
+    "photorealism",
+    "anatomical_artifacts",  # 5 = clean, 1 = severe artifacts
+)
+
+IMAGE_WEIGHTS = {
+    "experiment": {
+        "quality": 0.45,
+        "efficiency": 0.25,
+        "reliability": 0.15,
+        "storage": 0.10,
+        "usability": 0.05,
+    },
+    "final": {"quality": 0.70, "efficiency": 0.10, "reliability": 0.15, "storage": 0.05},
+}
+
+
+@dataclass(frozen=True)
+class ScoringProfile:
+    dimensions: tuple[str, ...]
+    weights: dict[str, dict[str, float]]
+    # Lower is better; median over completed runs, normalised best / own.
+    efficiency_metric: str
+
+
+AUDIO_PROFILE = ScoringProfile(AUDIO_REVIEW_DIMENSIONS, AUDIO_WEIGHTS, "real_time_factor")
+# Seconds per image, not per step: a candidate with more steps is slower, and
+# that is the cost it should carry.
+IMAGE_PROFILE = ScoringProfile(IMAGE_REVIEW_DIMENSIONS, IMAGE_WEIGHTS, "generation_s")
+PROFILES = {"audio.narrate": AUDIO_PROFILE, "image.generate": IMAGE_PROFILE}
+
+
+def profile_for(task: str) -> ScoringProfile:
+    return PROFILES.get(task, AUDIO_PROFILE)
+
+
+def peak_memory(metrics: dict[str, Any]) -> int | None:
+    """Peak memory of one run: process RSS plus GPU memory where it was recorded.
+
+    On Apple Silicon the GPU shares the Mac's memory, and RSS does not count what
+    the GPU driver allocated, so the two add up (as in the engines' own estimates).
+    """
+    values = [metrics.get("peak_rss_bytes"), metrics.get("gpu_peak_bytes")]
+    present = [int(v) for v in values if isinstance(v, int | float) and not isinstance(v, bool)]
+    return sum(present) if present else None
+
 
 MEMORY_SHARE_LIMIT = 0.75  # of the Mac's total memory; leaves room for macOS and the browser
 MAX_FAILURE_RATE = 0.05
@@ -69,8 +127,10 @@ class CandidateSummary:
     quality: float | None
     quality_by_dimension: dict[str, float]
     median_rtf: float | None
+    median_generation_s: float | None
     median_load_s: float | None
     peak_memory_bytes: int | None
+    peak_gpu_bytes: int | None
     installed_bytes: int
     reliability: float | None
     normalized: dict[str, float | None]
@@ -92,6 +152,10 @@ def _median(values: list[float]) -> float | None:
     return statistics.median(values) if values else None
 
 
+def _round(value: float | None, digits: int) -> float | None:
+    return round(value, digits) if value is not None else None
+
+
 def _weighted(parts: dict[str, float | None], weights: dict[str, float]) -> float | None:
     """Weighted mean over the dimensions that have data, renormalising weights.
 
@@ -107,10 +171,10 @@ def _weighted(parts: dict[str, float | None], weights: dict[str, float]) -> floa
 def summarize(
     candidates: list[CandidateView],
     total_memory_bytes: int,
-    dimensions: tuple[str, ...] = AUDIO_REVIEW_DIMENSIONS,
-    weights: dict[str, dict[str, float]] | None = None,
+    profile: ScoringProfile = AUDIO_PROFILE,
 ) -> list[CandidateSummary]:
-    weights = weights or AUDIO_WEIGHTS
+    dimensions, weights = profile.dimensions, profile.weights
+    metric = profile.efficiency_metric
     base: list[dict[str, Any]] = []
     for c in candidates:
         attempted = [r for r in c.runs if r.status != "skipped"]
@@ -125,12 +189,13 @@ def summarize(
             if any(d in r.scores for r in completed)
         }
         all_scores = [r.scores[d] for r in completed for d in dimensions if d in r.scores]
-        rtfs = [float(r.metrics["real_time_factor"]) for r in completed
-                if isinstance(r.metrics.get("real_time_factor"), int | float)]  # fmt: skip
+        speeds = [float(r.metrics[metric]) for r in completed
+                  if isinstance(r.metrics.get(metric), int | float)]  # fmt: skip
         loads = [float(r.metrics["load_s"]) for r in attempted
                  if isinstance(r.metrics.get("load_s"), int | float)]  # fmt: skip
-        peaks = [int(r.metrics["peak_rss_bytes"]) for r in attempted
-                 if isinstance(r.metrics.get("peak_rss_bytes"), int | float)]  # fmt: skip
+        peaks = [p for r in attempted if (p := peak_memory(r.metrics)) is not None]
+        gpus = [int(r.metrics["gpu_peak_bytes"]) for r in attempted
+                if isinstance(r.metrics.get("gpu_peak_bytes"), int | float)]  # fmt: skip
         finished = len(completed) + len(failed)
         base.append({
             "c": c,
@@ -142,14 +207,15 @@ def summarize(
             "rated": sum(1 for r in completed if any(d in r.scores for d in dimensions)),
             "quality": statistics.fmean(all_scores) if all_scores else None,
             "by_dim": {k: round(v, 2) for k, v in by_dim.items()},
-            "rtf": _median(rtfs),
+            "speed": _median(speeds),
             "load": _median(loads),
             "peak": max(peaks) if peaks else None,
+            "gpu": max(gpus) if gpus else None,
             "reliability": len(completed) / finished if finished else None,
         })  # fmt: skip
 
-    rtf_values = [b["rtf"] for b in base if b["rtf"]]
-    best_rtf = min(rtf_values) if rtf_values else None
+    speed_values = [b["speed"] for b in base if b["speed"]]
+    best_speed = min(speed_values) if speed_values else None
     size_values = [b["c"].installed_bytes for b in base if b["c"].installed_bytes > 0]
     best_size = min(size_values) if size_values else None
 
@@ -158,7 +224,7 @@ def summarize(
         c: CandidateView = b["c"]
         normalized: dict[str, float | None] = {
             "quality": (b["quality"] - 1) / 4 if b["quality"] is not None else None,
-            "efficiency": (best_rtf / b["rtf"]) if best_rtf and b["rtf"] else None,
+            "efficiency": (best_speed / b["speed"]) if best_speed and b["speed"] else None,
             "reliability": b["reliability"],
             "storage": (best_size / c.installed_bytes) if best_size and c.installed_bytes else
                        (1.0 if c.installed_bytes == 0 else None),
@@ -179,9 +245,11 @@ def summarize(
                 rated=b["rated"],
                 quality=round(b["quality"], 2) if b["quality"] is not None else None,
                 quality_by_dimension=b["by_dim"],
-                median_rtf=round(b["rtf"], 4) if b["rtf"] is not None else None,
+                median_rtf=_round(b["speed"], 4) if metric == "real_time_factor" else None,
+                median_generation_s=_round(b["speed"], 3) if metric == "generation_s" else None,
                 median_load_s=round(b["load"], 3) if b["load"] is not None else None,
                 peak_memory_bytes=b["peak"],
+                peak_gpu_bytes=b["gpu"],
                 installed_bytes=c.installed_bytes,
                 reliability=round(b["reliability"], 3) if b["reliability"] is not None else None,
                 normalized={

@@ -25,6 +25,26 @@ scripts/dev.sh            # backend :8765 + Vite hot reload at http://127.0.0.1:
 Data goes to `~/Library/Application Support/Rasva Studio`. Set `RASVA_HOME` to
 put it somewhere else; `dev.sh` uses `./.rasva-dev`.
 
+**Without the terminal (macOS).** Make the apps once:
+
+```bash
+scripts/make_mac_app.sh                 # or: --dest <folder>; default ~/Applications
+```
+
+- Open **Rasva Studio** from Finder, Launchpad or Spotlight. It builds the UI
+  only when needed, starts the server unless it is already running, and opens
+  http://127.0.0.1:8765.
+- While Rasva runs, the app stays in the Dock. Quit it to stop Rasva, or open
+  **Stop Rasva**.
+- If something fails, a dialog says what went wrong and where the log is
+  (`logs/launcher.log` in the data folder).
+- If this folder is inside Downloads, Desktop or Documents, macOS asks once
+  for permission to read it.
+- Uninstall: quit Rasva Studio and move both apps to the Trash. Your data is
+  not touched.
+
+Details and alternatives are in [docs/mac-launcher.md](docs/mac-launcher.md).
+
 ## Test
 
 ```bash
@@ -56,6 +76,7 @@ docs/engines/          per-engine decisions, limitations and licences
 scripts/pin_kokoro.py  pins Kokoro's model files (commit + SHA-256) into its manifest
 scripts/pin_engine.py  same for Chatterbox and IndicF5 (several repositories per engine)
 scripts/lock_engine.sh builds a hash-pinned lockfile for an engine installed from GitHub (IndicF5)
+scripts/make_mac_app.sh makes the Rasva Studio / Stop Rasva apps; they run scripts/mac_launcher.sh
 ```
 
 ## Architecture in one paragraph
@@ -170,6 +191,7 @@ pronunciation entry does not mark existing takes as outdated.
 | Privacy audit | Done (automated): private text never reaches logs; engine logs rotate; Kokoro's text-quoting warnings suppressed |
 | Offline test | Done (automated, app process): no outbound connections during normal use; engine workers run with offline flags; UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off |
 | Mac sleep guidance | Shown when Wi-Fi access is on |
+| App launches without the terminal | Built: `scripts/make_mac_app.sh` makes Rasva Studio and Stop Rasva apps ([details](docs/mac-launcher.md)). Tested with `open` on a dev port from a copy outside Downloads. **Still to do on the M2:** a Finder double-click, and allowing access to Downloads on first launch |
 | Usability testing · release checklist | Needs people and the M2 |
 
 To use Rasva from a phone: on the Mac, open Settings → Phone & other devices →

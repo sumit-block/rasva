@@ -1,10 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api } from "@/lib/api";
+import { api, lan } from "@/lib/api";
 
 type Theme = "dark" | "light" | "system";
 interface Prefs {
   mode: "simple" | "advanced";
   theme: Theme;
+  /** "local" on the Mac itself; "device" for a paired phone or laptop. */
+  client: "local" | "device" | "unpaired";
+  deviceName: string | null;
 }
 
 const PrefsContext = createContext<{ prefs: Prefs; setMode: (m: Prefs["mode"]) => Promise<void>; setTheme: (t: Theme) => void } | null>(null);
@@ -26,10 +29,11 @@ function applyTheme(theme: Theme) {
 
 /** UI mode lives on the Mac (shared by paired devices); theme is per-device. */
 export function PrefsProvider({ children }: { children: ReactNode }) {
-  const [prefs, setPrefs] = useState<Prefs>({ mode: "simple", theme: readTheme() });
+  const [prefs, setPrefs] = useState<Prefs>({ mode: "simple", theme: readTheme(), client: "local", deviceName: null });
 
   useEffect(() => {
     api.settings().then((s) => setPrefs((p) => ({ ...p, mode: s["ui.mode"] })), () => undefined);
+    lan.me().then((m) => setPrefs((p) => ({ ...p, client: m.kind, deviceName: m.device?.name ?? null })), () => undefined);
   }, []);
 
   useEffect(() => {

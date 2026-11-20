@@ -222,10 +222,10 @@ function StepFirst({ engine }: { engine: EngineInfo | undefined }) {
 function StepPhone() {
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Use Rasva from your phone</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Use Rasva from your phone (optional)</h1>
       <p className="mt-3 text-sm text-muted">
-        Starting jobs from your phone over home Wi-Fi needs secure pairing, which is coming in a later update. For now
-        Rasva only accepts connections from this Mac. Nothing is exposed to your network.
+        You can start and listen to narrations from your phone while this Mac does the work. It stays off until you turn
+        it on: Settings → Phone &amp; other devices. Only devices you pair can connect, and the connection is encrypted.
       </p>
     </>
   );

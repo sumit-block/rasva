@@ -106,8 +106,6 @@ engine package. Generate it with
 ## Not yet decided
 
 - **Repository licence:** there is no `LICENSE` file yet.
-- **Home Wi-Fi transport:** the recommendation is in
-  [ADR-0004](docs/adr/0004-lan-access-security.md); the decision is due at A5.
 - **Default macOS free-space reserve:** 15 GB is an assumption and can be
   changed in settings.
 
@@ -150,3 +148,17 @@ Known limits: loudness is levelled by speech RMS and limited by peak, not
 measured in LUFS. The built-in resampler is linear, which is fine for speech
 and upsampling; compressed music is decoded and resampled by FFmpeg. Changing a
 pronunciation entry does not mark existing takes as outdated.
+
+## A5 status: audio polish and release
+
+| Item | Status |
+| --- | --- |
+| Paired home Wi-Fi access | Done: local CA, encrypted HTTPS port, QR + 6-digit pairing, device list and removal, owner-only actions ([ADR-0004](docs/adr/0004-lan-access-security.md)) |
+| Quality presets · automatic engine choice | Not started |
+| Storage cleanup tools · long-running job recovery checks | Not started |
+| Mac sleep guidance · offline test · privacy audit | Partly: sleep/lid guidance shown when Wi-Fi access is on |
+| Usability testing · release checklist | Needs people and the M2 |
+
+To use Rasva from a phone: on the Mac, open Settings → Phone & other devices →
+Allow devices on my Wi-Fi → Pair a device, then scan the QR code with the
+phone. macOS may ask once whether to allow incoming connections; choose Allow.

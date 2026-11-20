@@ -15,12 +15,14 @@ import { ExperimentsPage } from "@/pages/Experiments";
 import { MorePage } from "@/pages/More";
 import { PronunciationPage } from "@/pages/Pronunciation";
 import { WelcomePage } from "@/pages/Welcome";
+import { PairPage } from "@/pages/Pair";
 import { ImageStudioPage, NotFoundPage } from "@/pages/Placeholders";
 
 document.documentElement.dataset.theme ??= "dark";
 
 const router = createBrowserRouter([
   { path: "/welcome", element: <WelcomePage /> },
+  { path: "/pair", element: <PairPage /> },
   {
     path: "/",
     element: <AppShell />,

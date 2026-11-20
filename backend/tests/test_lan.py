@@ -134,6 +134,9 @@ def test_pair_and_use_over_https(lan_settings, tmp_path):
         # Setup page over plain HTTP: instructions and the public CA only.
         setup = httpx.get(f"http://127.0.0.1:{s.lan_setup_port}/")
         assert setup.status_code == 200 and status["ca_fingerprint"] in setup.text
+        # iOS lists the CA by its common name; the instructions must use the same name.
+        assert status["ca_name"].startswith("Rasva Studio Local CA ")
+        assert f"&ldquo;{status['ca_name']}&rdquo;" in setup.text
         assert "script-src 'sha256-" in setup.headers["content-security-policy"]
         pem = httpx.get(f"http://127.0.0.1:{s.lan_setup_port}/rasva-ca.crt").content
         assert b"BEGIN CERTIFICATE" in pem and b"PRIVATE" not in pem

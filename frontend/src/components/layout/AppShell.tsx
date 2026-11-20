@@ -101,7 +101,11 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-4 md:px-8">
           <span className="font-semibold md:hidden">Rasva Studio</span>
-          <span className="hidden md:block" />
+          {prefs.client === "device" ? (
+            <span className="hidden text-xs text-muted md:block">Connected to your Mac over Wi-Fi</span>
+          ) : (
+            <span className="hidden md:block" />
+          )}
           <JobStatusChip />
         </header>
         <main id="main" className="flex-1 overflow-y-auto px-4 pt-6 pb-28 md:px-8 md:pb-10">

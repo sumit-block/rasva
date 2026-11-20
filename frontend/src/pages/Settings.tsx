@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DevicesCard } from "@/components/DevicesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -84,13 +85,7 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        <Card>
-          <CardTitle>Home Wi-Fi access</CardTitle>
-          <CardDescription>
-            Using Rasva from your phone or another laptop needs secure device pairing, which is not available yet.
-            For now Rasva only accepts connections from this Mac.
-          </CardDescription>
-        </Card>
+        <DevicesCard />
 
         <Card className="lg:col-span-2">
           <CardTitle>Storage</CardTitle>
@@ -123,7 +118,7 @@ export function SettingsPage() {
                   ))}
                 </tbody>
               </table>
-              <div className="mt-4 flex flex-wrap items-end gap-2">
+              {prefs.client === "local" && <div className="mt-4 flex flex-wrap items-end gap-2">
                 <label className="text-sm">
                   <span className="mb-1 block font-medium">Storage budget (GB)</span>
                   <input
@@ -137,7 +132,7 @@ export function SettingsPage() {
                 <Button variant="secondary" onClick={saveBudget} disabled={!budgetGb}>
                   Save budget
                 </Button>
-              </div>
+              </div>}
               {message && <Notice tone={message.tone} className="mt-3">{message.text}</Notice>}
             </>
           ) : (

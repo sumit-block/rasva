@@ -175,7 +175,7 @@ class LanManager:
             "addresses": addresses,
             "urls": [f"https://{a}:{self.settings.lan_port}" for a in [names[0], *addresses]],
             "ca_fingerprint": self.ca.fingerprint() if ca_ready else None,
-            "ca_name": self.ca.ca_certificate().subject.rfc4514_string() if ca_ready else None,
+            "ca_name": self.ca.ca_common_name() if ca_ready else None,
         }
 
 
@@ -269,10 +269,8 @@ class SetupApp:
         path = scope.get("path", "/")
         ca = self.lan.ca
         if path == "/":
-            cert = ca.ca_certificate()
-            cn = cert.subject.rfc4514_string().split(",")[0].removeprefix("CN=")
             page = _SETUP_PAGE.format(
-                ca_name=html.escape(cn), fingerprint=html.escape(ca.fingerprint()),
+                ca_name=html.escape(ca.ca_common_name()), fingerprint=html.escape(ca.fingerprint()),
                 port=self.lan.settings.lan_port, script=_SETUP_SCRIPT,
             )  # fmt: skip
             await self._send(send, 200, page.encode(), "text/html; charset=utf-8")

@@ -171,6 +171,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
+    if (res.status === 401 && code === "not_paired" && window.location.pathname !== "/pair") {
+      // A device on home Wi-Fi that isn't paired (or was removed): go pair it.
+      window.location.assign("/pair");
+    }
     throw new ApiError(res.status, code, message);
   }
   return res.json() as Promise<T>;
@@ -458,5 +462,46 @@ export async function uploadAsset(projectId: string, file: File, kind: "referenc
   form.append("kind", kind);
   return request<Asset>(`/projects/${projectId}/assets`, { method: "POST", body: form });
 }
+
+export interface LanStatus {
+  enabled: boolean;
+  running: boolean;
+  error: string | null;
+  port: number;
+  setup_port: number;
+  hostname: string;
+  addresses: string[];
+  urls: string[];
+  ca_fingerprint: string | null;
+  ca_name: string | null;
+  pairing: { code: string; expires_at: number } | null;
+}
+
+export interface Device {
+  id: string;
+  name: string;
+  user_agent: string;
+  created_at: string;
+  last_seen_at: string | null;
+  last_ip: string | null;
+}
+
+export type ClientInfo = { kind: "local" | "device" | "unpaired"; device: { id: string; name: string } | null };
+
+export const lan = {
+  status: () => request<LanStatus>("/lan"),
+  enable: () => request<LanStatus>("/lan/enable", { method: "POST" }),
+  disable: () => request<LanStatus>("/lan/disable", { method: "POST" }),
+  startPairing: () => request<LanStatus>("/devices/pairing", { method: "POST" }),
+  stopPairing: () => request<LanStatus>("/devices/pairing", { method: "DELETE" }),
+  devices: () => request<Device[]>("/devices"),
+  revoke: async (id: string) => {
+    const res = await fetch(`${API}/devices/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new ApiError(res.status, "revoke_failed", "Could not remove that device.");
+  },
+  me: () => request<ClientInfo>("/devices/me"),
+  pair: (code: string, name: string) =>
+    request<Device>("/devices/pair", { method: "POST", body: json({ code, name }) }),
+};
 
 export const isUsable = (m: EngineInfo) => m.install_state === "installed" || m.install_state === "built_in";

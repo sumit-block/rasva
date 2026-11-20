@@ -201,6 +201,11 @@ class LocalCA:
     def ca_certificate(self) -> x509.Certificate:
         return x509.load_pem_x509_certificate(self.paths.ca_cert.read_bytes())
 
+    def ca_common_name(self) -> str:
+        """The name iOS/Android show in their certificate lists."""
+        attrs = self.ca_certificate().subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+        return str(attrs[0].value)
+
     def ca_pem(self) -> bytes:
         return self.paths.ca_cert.read_bytes()
 

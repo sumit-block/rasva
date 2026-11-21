@@ -309,7 +309,7 @@ export function PoseStudio({ projectId, ensureProject, models }: {
               return (
                 <li key={j.id} className="list-none">
                   <ul><JobRow job={j} /></ul>
-                  {j.state === "completed" && person && j.outputs[0] && <CompareView beforeId={person} afterId={j.outputs[0]} />}
+                  {j.state === "completed" && person && j.outputs[0] && <div className="mt-3"><CompareView before={{ src: assetUrl(person), label: "Original" }} after={{ src: assetUrl(j.outputs[0]), label: "New pose" }} /></div>}
                 </li>
               );
             })}

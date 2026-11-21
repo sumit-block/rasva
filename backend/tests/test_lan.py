@@ -2,6 +2,7 @@
 exercised against a real server with real TLS."""
 
 import datetime as dt
+import json
 import plistlib
 import socket
 import ssl
@@ -79,9 +80,9 @@ def test_pairing_codes(monkeypatch):
 
 
 class Running:
-    def __init__(self, settings):
+    def __init__(self, settings, extra_engines=()):
         self.settings = settings
-        self.app = create_app(settings)
+        self.app = create_app(settings, extra_engines=extra_engines)
         self.server = uvicorn.Server(uvicorn.Config(
             self.app, host="127.0.0.1", port=settings.port, log_config=None, lifespan="on",
         ))  # fmt: skip
@@ -201,3 +202,52 @@ def test_lan_access_survives_restart(lan_settings):
     with Running(s):
         wait_for_port(s.lan_port)
         assert httpx.get(f"http://127.0.0.1:{s.port}/api/v1/lan").json()["running"] is True
+
+
+def test_paired_device_makes_and_watches_images(lan_settings, tmp_path):
+    """Image Studio over home Wi-Fi (PRD phase I4): submit, watch, version, export."""
+    s = lan_settings
+    mac = httpx.Client(base_url=f"http://127.0.0.1:{s.port}/api/v1")
+    with Running(s, extra_engines=("tests.fake_versioned_image:FakeVersionedImage",)):
+        mac.post("/lan/enable")
+        wait_for_port(s.lan_port)
+        ca_file = tmp_path / "ca.pem"
+        ca_file.write_bytes(httpx.get(f"http://127.0.0.1:{s.lan_setup_port}/rasva-ca.crt").content)
+        phone = httpx.Client(base_url=f"https://127.0.0.1:{s.lan_port}/api/v1",
+                             verify=ssl.create_default_context(cafile=str(ca_file)))  # fmt: skip
+        code = mac.post("/devices/pairing").json()["pairing"]["code"]
+        assert phone.post("/devices/pair", json={"code": code, "name": "Phone"}).status_code == 201
+
+        pid = phone.post("/projects", json={"name": "Pics", "module": "image"}).json()["id"]
+        assert phone.patch("/settings", json={"image.low_memory": True}).status_code == 200
+        with phone.stream("GET", "/jobs/stream", timeout=10) as events:
+            r = phone.post("/jobs", json={"project_id": pid, "task": "image.generate",
+                                           "engine_id": "test-versioned-image",
+                                           "inputs": {"prompt": "a kite"}})  # fmt: skip
+            assert r.status_code == 201, r.text
+            job_id = r.json()["id"]
+            seen = set()
+            for line in events.iter_lines():
+                if line.startswith("data:") and job_id in line:
+                    seen.add(json.loads(line[5:])["job"]["state"])
+                if "completed" in seen or "failed" in seen:
+                    break
+        assert "completed" in seen
+        job = phone.get(f"/jobs/{job_id}").json()
+        assert job["inputs"]["low_memory"] is True
+
+        again = phone.post(f"/jobs/{job_id}/again", json={"seed": "same"})
+        assert again.status_code == 201
+        deadline = time.monotonic() + 15
+        while phone.get(f"/jobs/{again.json()['id']}").json()["state"] != "completed":
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        group = phone.get(f"/projects/{pid}/image-groups").json()[0]
+        assert len(group["versions"]) == 2
+        r = phone.patch(f"/image-groups/{group['id']}", json={"favourite_job_id": job_id})
+        assert r.status_code == 200
+        exported = phone.get(f"/assets/{job['outputs'][0]}/export", params={"details": "false"})
+        assert exported.status_code == 200 and exported.content.startswith(b"\x89PNG")
+        # Cleanup stays on the Mac.
+        assert phone.get("/storage/cleanup").status_code == 403
+        mac.post("/lan/disable")

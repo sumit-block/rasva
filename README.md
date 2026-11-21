@@ -91,7 +91,7 @@ out-of-memory kill fails only that job, and unloading a model is guaranteed by
 the process exiting. Workers have their Hugging Face and PyTorch caches
 redirected into the managed root ([ADR-0002](docs/adr/0002-managed-storage.md)),
 and cannot open network connections during load or generation
-([ADR-0007](docs/adr/0007-worker-network-guard.md)). Job progress streams
+([ADR-0009](docs/adr/0009-worker-network-guard.md)). Job progress streams
 to the UI over Server-Sent Events.
 
 ### Memory guard (PRD §24)
@@ -217,7 +217,7 @@ pronunciation entry does not mark existing takes as outdated.
 | Quality presets · automatic engine choice | Done: per-language recommendation from your own ratings (else default voice) with the reason shown; presets only for engines that have them; export presets |
 | Storage cleanup | Done: previews, removed-sentence audio, temp files, replaced versions, older exports, paused downloads, unrecognised files; originals and in-use audio never offered; missing files reported |
 | Privacy audit | Done (automated): private text never reaches logs; engine logs rotate; Kokoro's text-quoting warnings suppressed |
-| Offline test | Done (automated): no outbound connections from the app process during normal use; engine workers run with offline flags **and cannot open network connections or look up hosts during load and generation** (Python-level socket guard, blocked attempts named in the engine log; [ADR-0007](docs/adr/0007-worker-network-guard.md)); UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off, and loading each installed engine under the guard |
+| Offline test | Done (automated): no outbound connections from the app process during normal use; engine workers run with offline flags **and cannot open network connections or look up hosts during load and generation** (Python-level socket guard, blocked attempts named in the engine log; [ADR-0009](docs/adr/0009-worker-network-guard.md)); UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off, and loading each installed engine under the guard |
 | Mac sleep guidance | Shown when Wi-Fi access is on |
 | Memory guard (PRD §24) | Done (automated tests with mocked memory readings): cold starts wait until available memory covers the engine's peak plus a 1 GB margin, after unloading an idle other engine; status and Jobs page show memory ([details](#memory-guard-prd-24)). **Still to do on the M2:** real engines under the guard, and how quickly `available` recovers after an engine exits. With the measured peaks, Stable Diffusion needs 10 GB available and Chatterbox 7 GB; on 2026-11-20, with other work open, psutil reported 5.9 GB, so both would have waited, and even a 0 margin would not have let Stable Diffusion (9 GB) start. Whether that is acceptable is an owner decision. While a job waits, other jobs that load an engine (for example a Kokoro narration that would fit) wait behind it until it starts or is cancelled |
 | App launches without the terminal | Built: `scripts/make_mac_app.sh` makes Rasva Studio and Stop Rasva apps ([details](docs/mac-launcher.md)). Tested with `open` on a dev port from a copy outside Downloads. **Still to do on the M2:** a Finder double-click, and allowing access to Downloads on first launch |
@@ -259,4 +259,34 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Reference photos | Done: upload with a role (person, clothing, pose, background), change roles, choose up to 4; checked on create and retry ([references.py](backend/rasva/services/references.py)) |
 | Image Studio | Done: "Create from text" and "Edit a photo", engine choice in Advanced mode |
 | Measurements (M2, 2026-11-20) | 768 px: 50–53 s from text, 124 s with 1 photo, 167 s with 2; MLX peak 4.9–7.3 GB; installed 21.9 GB including the 16 GB originals ([details](docs/engines/flux2klein.md)) |
-| Still open | Owner review of quality; tests on photos of people; whether to delete the 16 GB originals; versions and before/after (I4 branch) |
+| Still open | Owner review of quality; tests on photos of people; whether to delete the 16 GB originals |
+
+## I4 status: image versions, export, cleanup (engine-independent parts)
+
+Built and tested with a fake image engine (`tests/fake_versioned_image.py`). No real
+model was run for this work.
+
+| Item | Status |
+| --- | --- |
+| Versions | Done: variations (new seed), "Try again, same seed", edited descriptions, retries and edits of the same reference photos are versions of one image (migration 0009). You can mark a favourite; with none, the newest finished version is current |
+| Before/after | Done: wipe slider (arrow keys, Page Up/Down, Home/End) or side by side. Compares versions, or an edit with its reference photo. Checked at 375 px with the fake engine |
+| Export | Done: PNG as made, with or without generation details; JPEG in the browser with a quality setting ([ADR-0008](docs/adr/0008-image-export-encoding.md)). The description is never written into files |
+| Cleanup | Done: older versions that are not the favourite or the newest are offered after a day (off by default). Reference photos, favourites and images used as sources are never offered. Files of failed image jobs count as temporary |
+| Recovery | Done (tests): an image job interrupted by a restart is marked Interrupted and retries with the same seed into the same image's versions |
+| Low-memory mode | Setting `image.low_memory`, with a toggle in Image Studio. It is passed to engines that list the `low_memory` feature. **No installed engine supports it yet**: SD 1.5 does not opt in (attention slicing blanked images on MPS; CPU offload is unmeasured) |
+| LAN | Done (tests over real TLS): paired devices create, watch (live updates), version, favourite and export images. Cleanup stays on the Mac |
+
+### Image release checklist (PRD §34.2)
+
+| Item | Status |
+| --- | --- |
+| Small image baseline works on M2 | Done (I0, SD 1.5, measured 2026-11-20). Quality review by eye still open |
+| Authorized person reference uploads work | Partly: uploads with a role (person, garment, pose, background) work (I1 base). Rasva does **not** record authorisation or consent for person photos (owner decision, ADR-0007). FLUX.2 Klein 4B edits with them on the M2 (I1) |
+| Multi-reference role assignment works | Up to 4 photos with roles per edit job (I1 base), tested with a fake engine. Versions group edits by photo and role |
+| Same-person pose change tested | Built and tested with a fake engine ([pose-control.md](docs/engines/pose-control.md), [test plan](docs/engines/pose-i2-test-plan.md)); not yet run with FLUX.2 Klein on a person photo |
+| Clothing change workflow tested | Built on FLUX.2 Klein and tested with a fake engine ([outfit.md](docs/engines/outfit.md), [test plan](docs/engines/outfit-test-plan.md)); not yet run on real photos |
+| Before/after, versions and PNG/JPEG exports work | Built and tested with a fake engine. Still to check with a real engine on the M2, and JPEG in Safari on a phone |
+| Identity, body, clothing and artifact benchmarks completed | Not done |
+| Selected models fit tested memory and storage limits | SD 1.5 (8.5 GB GPU reserved, 2.75 GB installed) and FLUX.2 Klein 4B (MLX peak 4.9–7.3 GB, 21.9 GB installed). The I2 pose finder is not measured |
+| LAN clients can submit and monitor | Done in automated tests. Not yet tried from a real phone |
+| Licensing, consent, safety and usability gates pass | Not met. Consent and safety are not met by design, pending owner review: no content filter on SD 1.5 (ADR-0006) or FLUX.2 Klein (ADR-0007), and no consent check for person photos (ADR-0007). Exports keep the AI-generated label by default, but it can be turned off. Licensing and usability reviews are not done. The real-model, real-photo and human-review items (§29.4 evaluation set, §29.5 targets) are not done |

@@ -1,4 +1,4 @@
-# ADR-0007: Engine workers cannot open network connections
+# ADR-0009: Engine workers cannot open network connections
 
 - Status: Accepted
 - Date: 2026-11-20

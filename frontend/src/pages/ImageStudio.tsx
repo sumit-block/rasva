@@ -1,7 +1,8 @@
 import { ImageIcon, Plus, Sparkles, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { JobRow } from "@/components/JobRow";
+import { ImageResults } from "@/components/image/ImageResults";
+import { LowMemoryToggle } from "@/components/image/LowMemoryToggle";
 import { OutfitPanel } from "@/components/image/OutfitPanel";
 import { PoseStudio } from "@/components/image/PoseStudio";
 import { ReferencePicker } from "@/components/image/ReferencePicker";
@@ -60,12 +61,13 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
     await reloadProjects();
     return p;
   };
-  const ensureProject = async () => {
-    if (projectId) return projectId;
+  const newProject = async () => {
     const p = await createProject();
     setParams({ project: p.id, ...(mode === "edit" ? { mode } : {}) });
     return p.id;
   };
+  // Pose and outfit panels call this before every job: reuse the open project.
+  const ensureProject = async () => projectId ?? (await newProject());
 
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -79,7 +81,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
     setSubmitting(true);
     setError(undefined);
     try {
-      const pid = projectId ?? (await ensureProject());
+      const pid = await ensureProject();
       upsert(await api.createJob({
         project_id: pid, task: TASK[mode], engine_id: engine.id,
         inputs: {
@@ -130,7 +132,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <Button variant="secondary" disabled={submitting}
-              onClick={() => void ensureProject().catch((e: Error) => setError(e.message))}>
+              onClick={() => void newProject().catch((e: Error) => setError(e.message))}>
               <Plus aria-hidden /> New
             </Button>
           </div>
@@ -227,6 +229,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
               </label>
             </>
           )}
+          {engine && <LowMemoryToggle engine={engine} />}
           <p className="mt-4 text-xs text-muted">
             Images are labelled as AI-generated in their details. These engines run without a content filter, so what you
             create is your responsibility under their licences.
@@ -235,10 +238,10 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
       </div>
 
       <section aria-label="Results" className="mt-4">
-        {results.length === 0 ? (
-          <p className="text-sm text-muted">Your images appear here. The first one takes longer while the engine loads.</p>
+        {projectId ? (
+          <ImageResults projectId={projectId} jobs={results} />
         ) : (
-          <ul className="grid gap-3 md:grid-cols-2">{results.map((j) => <JobRow key={j.id} job={j} />)}</ul>
+          <p className="text-sm text-muted">Your images appear here. Generating one takes a while on the first run while the engine loads.</p>
         )}
       </section>
 

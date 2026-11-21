@@ -18,6 +18,8 @@ DEFAULTS: dict[str, Any] = {
     "lan.enabled": False,
     # Memory left over after an engine's measured peak before a cold start (PRD §24).
     "memory.safety_margin_bytes": DEFAULT_SAFETY_MARGIN_BYTES,
+    # Ask image engines that support it to use less memory (services/images.py).
+    "image.low_memory": False,
 }
 
 # Validators keep obviously unsafe values out (e.g. a 0-byte OS reserve).

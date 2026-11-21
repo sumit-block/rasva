@@ -145,6 +145,7 @@ export type AppSettings = {
   "onboarding.step": number;
   "lan.enabled": boolean;
   "memory.safety_margin_bytes": number;
+  "image.low_memory": boolean;
 };
 
 export interface MemoryWait {
@@ -177,7 +178,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API}${path}`, {

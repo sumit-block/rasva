@@ -47,7 +47,10 @@ def storage(state: State, conn: DB, refresh: bool = False) -> dict[str, Any]:
 def check(state: State, conn: DB) -> dict[str, Any]:
     s = _storage(state, conn)
     needed = s["budget_bytes"] - s["used_bytes"] + s["os_reserve_bytes"]
-    return system_check.run_checks(s["free_disk_bytes"], max(needed, 0))
+    names = {e.descriptor.id: e.descriptor.display_name for e in state.registry.all()}
+    return system_check.run_checks(
+        s["free_disk_bytes"], max(needed, 0), state.settings.paths.envs, names
+    )
 
 
 def _memory() -> dict[str, Any]:

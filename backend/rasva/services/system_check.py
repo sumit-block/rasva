@@ -1,8 +1,9 @@
 """Hardware and environment readiness checks (PRD §8 step 2, P0-004).
 
-Cheap by design: framework availability is detected with ``find_spec`` (no heavy
-imports). Whether MPS/MLX actually work is verified per engine at install time,
-inside a worker process.
+Cheap by design, with no heavy imports. AI frameworks live in each engine's own
+environment (ADR-0003), never in the app's Python, so acceleration is reported from
+the installed engines' environments (a directory check). Whether MPS/MLX actually
+work is verified per engine at install time, inside a worker process.
 """
 
 from __future__ import annotations
@@ -11,7 +12,9 @@ import importlib.util
 import platform
 import shutil
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Literal
 
 import psutil
@@ -20,6 +23,9 @@ from rasva.config import GB
 from rasva.engines.contract import SystemFacts
 
 Status = Literal["pass", "warn", "fail"]
+
+# Framework packages an engine environment may hold, and how the check names them.
+FRAMEWORKS = (("mlx", "MLX"), ("torch", "PyTorch (Metal)"), ("onnxruntime", "ONNX Runtime"))
 
 
 @dataclass
@@ -30,21 +36,50 @@ class Check:
     message: str
 
 
-def facts() -> SystemFacts:
+def engine_frameworks(envs_dir: Path | None) -> dict[str, list[str]]:
+    """Framework label -> ids of engines whose environment contains it."""
+    found: dict[str, list[str]] = {}
+    if envs_dir is None or not envs_dir.is_dir():
+        return found
+    envs = sorted(p for p in envs_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+    for env in envs:
+        for site in sorted(env.glob("lib/python3*/site-packages")):
+            for module, label in FRAMEWORKS:
+                if (site / module).is_dir():
+                    found.setdefault(label, []).append(env.name)
+            break
+    order = [label for _, label in FRAMEWORKS]
+    return dict(sorted(found.items(), key=lambda kv: order.index(kv[0])))
+
+
+def facts(envs_dir: Path | None = None) -> SystemFacts:
+    """Host facts. With ``envs_dir``, MLX/PyTorch availability comes from the
+    installed engines' environments; without it, from the app's own Python."""
     is_mac = sys.platform == "darwin"
     arch = platform.machine().lower()
+    if envs_dir is not None:
+        in_envs = engine_frameworks(envs_dir)
+        mlx, torch = "MLX" in in_envs, "PyTorch (Metal)" in in_envs
+    else:
+        mlx = importlib.util.find_spec("mlx") is not None
+        torch = importlib.util.find_spec("torch") is not None
     return SystemFacts(
         os="macOS" if is_mac else platform.system(),
         arch=arch,
         total_memory_bytes=psutil.virtual_memory().total,
         apple_silicon=is_mac and arch == "arm64",
-        mlx_available=importlib.util.find_spec("mlx") is not None,
-        mps_available=is_mac and arch == "arm64" and importlib.util.find_spec("torch") is not None,
+        mlx_available=mlx,
+        mps_available=is_mac and arch == "arm64" and torch,
     )
 
 
-def run_checks(free_disk_bytes: int, needed_free_bytes: int) -> dict[str, object]:
-    f = facts()
+def run_checks(
+    free_disk_bytes: int,
+    needed_free_bytes: int,
+    envs_dir: Path | None = None,
+    names: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    f = facts(envs_dir)
     checks: list[Check] = []
 
     if f.apple_silicon:
@@ -131,19 +166,23 @@ def run_checks(free_disk_bytes: int, needed_free_bytes: int) -> dict[str, object
         )
     )
 
-    accel = []
-    if f.mlx_available:
-        accel.append("MLX")
-    if f.mps_available:
-        accel.append("PyTorch (Metal)")
+    frameworks = engine_frameworks(envs_dir)
+    names = names or {}
+
+    def who(ids: list[str]) -> str:
+        return ", ".join(names.get(i, i) for i in ids)
+
     checks.append(
         Check(
             "accelerators",
             "AI acceleration",
-            "pass" if accel else "warn",
-            ("Available: " + ", ".join(accel) + ".")
-            if accel
-            else "No AI framework installed yet. It is installed with your first engine.",
+            "pass" if frameworks else "warn",
+            "Installed with your engines: "
+            + "; ".join(f"{label} ({who(ids)})" for label, ids in frameworks.items())
+            + "."
+            if frameworks
+            else "No engine installed yet. Each engine brings its own AI framework "
+            "(MLX or PyTorch) when you install it.",
         )
     )
 

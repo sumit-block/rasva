@@ -261,11 +261,15 @@ export interface ExperimentCandidate {
   settings: Record<string, unknown>;
 }
 
+export type ExperimentTask = "audio.narrate" | "image.generate";
+
 export interface ExperimentRun {
   id: string;
   case_id: string;
   category: string;
+  /** The sentence (narration) or the description (images). */
   text: string;
+  seed: number | null;
   focus: string;
   candidate_key: string;
   engine_id: string;
@@ -296,8 +300,10 @@ export interface CandidateSummary {
   quality: number | null;
   quality_by_dimension: Record<string, number>;
   median_rtf: number | null;
+  median_generation_s: number | null;
   median_load_s: number | null;
   peak_memory_bytes: number | null;
+  peak_gpu_bytes: number | null;
   installed_bytes: number;
   reliability: number | null;
   score_experiment: number | null;
@@ -311,6 +317,7 @@ export interface ExperimentListItem {
   id: string;
   name: string;
   objective: string;
+  task: ExperimentTask;
   benchmark: string | null;
   status: "active" | "decided" | "archived";
   decision: string | null;
@@ -335,8 +342,10 @@ export const experiments = {
   create: (body: {
     name: string;
     objective?: string;
+    task?: ExperimentTask;
     benchmark?: string;
     texts?: string[];
+    prompts?: string[];
     candidates: { engine_id: string; settings: Record<string, unknown> }[];
   }) => request<Experiment>("/experiments", { method: "POST", body: json(body) }),
   score: (id: string, runId: string, scores: Record<string, number | null>) =>

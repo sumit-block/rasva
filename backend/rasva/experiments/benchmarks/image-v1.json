@@ -1,0 +1,113 @@
+{
+  "id": "image-v1",
+  "name": "Image benchmark v1",
+  "description": "15 fixed text-to-image prompts: 3 objects, 3 scenes, 3 styles, 3 with words in the picture and 3 with people and hands. Each prompt has a fixed seed, so every candidate starts from the same noise. A baseline set for I0, not the PRD §29.4 reference-photo set.",
+  "task": "image.generate",
+  "cases": [
+    {
+      "id": "ob01",
+      "category": "objects",
+      "prompt": "A red ceramic teapot on a wooden table, soft window light",
+      "seed": 1101,
+      "focus": "shape, reflections, a clean edge against the table"
+    },
+    {
+      "id": "ob02",
+      "category": "objects",
+      "prompt": "A bicycle leaning against a white wall",
+      "seed": 1102,
+      "focus": "two round wheels, a frame and chain that make sense"
+    },
+    {
+      "id": "ob03",
+      "category": "objects",
+      "prompt": "A glass of water with ice cubes and a slice of lemon",
+      "seed": 1103,
+      "focus": "transparency, refraction, the lemon inside or on the rim"
+    },
+    {
+      "id": "sc01",
+      "category": "scenes",
+      "prompt": "A busy Indian street market at dusk, stalls with fruit and lanterns",
+      "seed": 2201,
+      "focus": "depth, lighting, believable stalls"
+    },
+    {
+      "id": "sc02",
+      "category": "scenes",
+      "prompt": "A quiet mountain lake at sunrise with mist over the water",
+      "seed": 2202,
+      "focus": "horizon, reflections, mist"
+    },
+    {
+      "id": "sc03",
+      "category": "scenes",
+      "prompt": "A small kitchen with a stove, shelves of jars and a window",
+      "seed": 2203,
+      "focus": "straight lines, perspective, objects in sensible places"
+    },
+    {
+      "id": "st01",
+      "category": "styles",
+      "prompt": "A watercolour painting of a peacock in a garden",
+      "seed": 3301,
+      "focus": "a watercolour look, not a photo"
+    },
+    {
+      "id": "st02",
+      "category": "styles",
+      "prompt": "A pencil sketch of an old banyan tree",
+      "seed": 3302,
+      "focus": "a pencil look: lines and shading, no colour"
+    },
+    {
+      "id": "st03",
+      "category": "styles",
+      "prompt": "A flat vector illustration of a rocket, simple shapes and bright colours",
+      "seed": 3303,
+      "focus": "flat shapes, clean edges, no photographic texture"
+    },
+    {
+      "id": "tx01",
+      "category": "text",
+      "prompt": "A shop sign that says OPEN in large letters",
+      "seed": 4401,
+      "focus": "the word OPEN spelled correctly"
+    },
+    {
+      "id": "tx02",
+      "category": "text",
+      "prompt": "A birthday cake with the words HAPPY BIRTHDAY written in icing",
+      "seed": 4402,
+      "focus": "legible words; small engines often garble text"
+    },
+    {
+      "id": "tx03",
+      "category": "text",
+      "prompt": "A book cover with the title THE RIVER in bold letters",
+      "seed": 4403,
+      "focus": "the title spelled correctly and placed like a cover"
+    },
+    {
+      "id": "pp01",
+      "category": "people",
+      "prompt": "Portrait photo of an elderly woman smiling, natural light",
+      "seed": 5501,
+      "focus": "face proportions, eyes, teeth"
+    },
+    {
+      "id": "pp02",
+      "category": "people",
+      "prompt": "Close-up of two hands holding a cup of tea",
+      "seed": 5502,
+      "focus": "five fingers per hand, a believable grip"
+    },
+    {
+      "id": "pp03",
+      "category": "people",
+      "prompt": "A man sitting on a bench reading a newspaper, full body",
+      "seed": 5503,
+      "focus": "limbs, posture on the bench, hands on the paper"
+    }
+  ]
+}

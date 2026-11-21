@@ -51,7 +51,8 @@ def check_upload(
 def resolve_inputs(
     conn: sqlite3.Connection, paths: Paths, project_id: str, inputs: dict[str, Any]
 ) -> dict[str, Any]:
-    """Turn ``inputs.references`` into ``[{asset_id, role, path}]`` an engine can read."""
+    """Turn ``inputs.references`` into ``[{asset_id, role, path}]`` an engine can read
+    (plus ``pose_figure: true`` for pose-finder figures, I2)."""
     refs = inputs.get("references")
     if refs is None:
         return inputs
@@ -71,14 +72,22 @@ def resolve_inputs(
             asset = asset_svc.get(conn, asset_id)
         except asset_svc.AssetNotFound as exc:
             raise PhotoReferenceError("A chosen photo was deleted. Choose it again.") from exc
-        if asset["project_id"] != project_id or asset["kind"] != "reference":
+        # I2: a stick figure made by the pose finder is an output asset; it can be
+        # used again as a pose reference.
+        figure = asset["kind"] == "output" and asset["metadata"].get("kind") == "pose"
+        if asset["project_id"] != project_id or not (asset["kind"] == "reference" or figure):
             raise PhotoReferenceError("Each photo must be one of this project's uploads.")
         if not str(asset["media_type"]).startswith("image/"):
             raise PhotoReferenceError(f"{asset['original_name']} is not a photo.")
         role = check_role(ref.get("role")) or asset["metadata"].get("role") or "person"
+        if figure and role != "pose":
+            raise PhotoReferenceError("A pose figure can only be used as the pose.")
         path = asset_svc.resolve(paths, asset["rel_path"])
         if not Path(path).is_file():
             name = asset["original_name"]
             raise PhotoReferenceError(f"{name} is missing from disk. Upload it again.")
-        out.append({"asset_id": asset_id, "role": role, "path": str(path)})
+        entry = {"asset_id": asset_id, "role": role, "path": str(path)}
+        if figure:
+            entry["pose_figure"] = True
+        out.append(entry)
     return {**inputs, "references": out}

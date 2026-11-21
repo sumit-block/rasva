@@ -2,6 +2,7 @@ import { ImageIcon, Plus, Sparkles, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { JobRow } from "@/components/JobRow";
+import { PoseStudio } from "@/components/image/PoseStudio";
 import { ReferencePicker } from "@/components/image/ReferencePicker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ const IMAGE_TASKS = new Set(Object.values(TASK));
 const MAX_CHARS = 1000;
 const MAX_SEED = 2 ** 32 - 1;
 
-function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; projects: Project[]; reloadProjects: () => Promise<void> }) {
+function Studio({ engines, projects, reloadProjects, models }: { engines: EngineInfo[]; projects: Project[]; reloadProjects: () => Promise<void>; models: EngineInfo[] }) {
   const { prefs } = usePrefs();
   const { jobs, upsert } = useJobs();
   const [params, setParams] = useSearchParams();
@@ -238,6 +239,15 @@ function Studio({ engines, projects, reloadProjects }: { engines: EngineInfo[]; 
           <ul className="grid gap-3 md:grid-cols-2">{results.map((j) => <JobRow key={j.id} job={j} />)}</ul>
         )}
       </section>
+
+      {/* Phase I2: same person, new pose (components/image/PoseStudio.tsx). */}
+      <PoseStudio projectId={projectId} models={models}
+        ensureProject={async () => {
+          if (projectId) return projectId;
+          const p = await createProject();
+          setParams({ project: p.id });
+          return p.id;
+        }} />
     </>
   );
 }
@@ -265,8 +275,19 @@ export function ImageStudioPage() {
             ? candidate.compatibility.reasons.join(" ")
             : "Pictures need an image engine on this Mac. Stable Diffusion 1.5 is the small first one (about 2 GB)."}
         </EmptyState>
+        {/* Phase I2: pose changes don't need the description engine. */}
+        {models.data.some((m) => isUsable(m) && (m.tasks.includes("image.edit") || m.tasks.includes("image.pose"))) && (
+          <PoseStudio projectId={projects.data[0]?.id ?? null} models={models.data}
+            ensureProject={async () => {
+              const existing = projects.data?.[0]?.id;
+              if (existing) return existing;
+              const p = await api.createProject({ name: `Images ${new Date().toLocaleDateString()}`, module: "image" });
+              await projects.reload();
+              return p.id;
+            }} />
+        )}
       </>
     );
   }
-  return <Studio engines={engines} projects={projects.data} reloadProjects={projects.reload} />;
+  return <Studio engines={engines} projects={projects.data} reloadProjects={projects.reload} models={models.data} />;
 }

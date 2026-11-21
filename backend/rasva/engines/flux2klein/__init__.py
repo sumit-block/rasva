@@ -42,6 +42,7 @@ from rasva.engines.contract import (
     RuntimeContext,
     SystemFacts,
 )
+from rasva.engines.pose import edit as pose_edit  # I2: same person, new pose
 
 ENGINE_ID = "flux2-klein-4b"
 REPO_ID = "black-forest-labs/FLUX.2-klein-4B"
@@ -88,7 +89,7 @@ class Flux2KleinEngine(Engine):
         version="4B-q4",
         modality="image",
         tasks=list(TASKS),
-        features=["prompt", "seed", "references", "presets"],
+        features=["prompt", "seed", "references", "presets", "pose"],
         license="Apache-2.0 (model); mflux is MIT",
         license_class="permissive",
         license_notes=[
@@ -162,6 +163,8 @@ class Flux2KleinEngine(Engine):
     def validate_input(self, task: str, inputs: dict[str, Any]) -> dict[str, Any]:
         if task not in TASKS:
             raise EngineInputError(f"FLUX.2 Klein cannot do '{task}'.")
+        if task == "image.edit" and pose_edit.is_pose_edit(inputs):
+            return pose_edit.validate(inputs)  # I2: instruction, order, sizes, output size
         prompt = " ".join(str(inputs.get("prompt") or "").split())
         if not prompt:
             raise EngineInputError(
@@ -306,6 +309,7 @@ class Flux2KleinEngine(Engine):
                     "source_asset_ids": [r["asset_id"] for r in refs],
                     "roles": [r["role"] for r in refs],
                     "synthetic": True, "content_filter": False,
+                    **pose_edit.output_metadata(inputs),  # I2
                 },
             )],
             metrics={
@@ -332,7 +336,10 @@ def _prepared(model_dir: Path) -> dict[str, Any] | None:
 
 
 def _prepare_references(refs: list[dict[str, Any]], out_dir: Path) -> list[str]:
-    """Upright (EXIF rotation applied), RGB, at most 1024 px on the long side."""
+    """Upright (EXIF rotation applied), RGB, at most 1024 px on the long side.
+
+    A reference with ``max_side`` (I2 pose jobs) is resized to exactly that long
+    side, up or down: the identity settings send person and pose at set sizes."""
     from PIL import Image, ImageOps
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -340,7 +347,14 @@ def _prepare_references(refs: list[dict[str, Any]], out_dir: Path) -> list[str]:
     for k, ref in enumerate(refs):
         with Image.open(ref["path"]) as img:
             pic = ImageOps.exif_transpose(img).convert("RGB")
-        pic.thumbnail((REFERENCE_MAX_SIDE, REFERENCE_MAX_SIDE))
+        side = ref.get("max_side")
+        if side:
+            scale = int(side) / max(pic.size)
+            size = (max(1, round(pic.width * scale)), max(1, round(pic.height * scale)))
+            if size != pic.size:
+                pic = pic.resize(size, Image.LANCZOS)
+        else:
+            pic.thumbnail((REFERENCE_MAX_SIDE, REFERENCE_MAX_SIDE))
         target = out_dir / f"{k}.png"
         pic.save(target, format="PNG")
         paths.append(str(target))

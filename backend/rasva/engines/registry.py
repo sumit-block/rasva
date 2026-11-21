@@ -16,6 +16,7 @@ BUILTIN: dict[str, str] = {
     "indicf5": "rasva.engines.indicf5:IndicF5Engine",
     "sd15": "rasva.engines.sd15:StableDiffusion15Engine",
     "flux2-klein-4b": "rasva.engines.flux2klein:Flux2KleinEngine",
+    "dwpose": "rasva.engines.pose:PoseFinderEngine",
     "audio-mixer": "rasva.engines.builtin.mixer:MixerEngine",
 }
 TEST_ONLY: dict[str, str] = {

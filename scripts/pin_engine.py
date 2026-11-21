@@ -4,6 +4,7 @@
     python3 scripts/pin_engine.py chatterbox
     python3 scripts/pin_engine.py sd15
     python3 scripts/pin_engine.py flux2klein
+    python3 scripts/pin_engine.py dwpose          (pose finder, phase I2)
     python3 scripts/pin_engine.py indicf5 [--reviewed-code]
     python3 scripts/pin_engine.py kokoro            (same as scripts/pin_kokoro.py)
 
@@ -111,6 +112,15 @@ SPECS = {
                 "tokenizer/vocab.json",
                 "vae/config.json", "vae/diffusion_pytorch_model.safetensors",
             ],
+        }],
+    },
+    "dwpose": {
+        "engine": "dwpose",
+        "dir": "pose",
+        "sources": [{
+            # ONNX only: the repository also holds .pth (pickle) files, never listed here.
+            "repo": "yzd-v/DWPose", "subdir": "",
+            "files": ["yolox_l.onnx", "dw-ll_ucoco_384.onnx"],
         }],
     },
 }  # fmt: skip

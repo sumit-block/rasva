@@ -99,6 +99,7 @@ class StableDiffusion15Engine(Engine):
         requirements_lock="requirements.lock",
         python_version="3.12",
         presets=PRESETS,
+        input_ranges={k: [lo, hi, DEFAULTS[k]] for k, (lo, hi) in RANGES.items()},
     )
 
     def __init__(self) -> None:

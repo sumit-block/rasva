@@ -327,3 +327,21 @@ def test_cancel_stops_between_steps(fake, tmp_path):
     cancel.set()
     with pytest.raises(Canceled):
         run(loaded(tmp_path), tmp_path, cancel=cancel)
+
+
+def test_published_ranges_match_validation():
+    """The UI's steps box uses input_ranges; validate_input must agree."""
+    from rasva.engines.sd15 import StableDiffusion15Engine
+
+    for cls in (K.Flux2KleinEngine, StableDiffusion15Engine):
+        lo, hi, default = cls.descriptor.input_ranges["steps"]
+        eng = cls()
+
+        def steps(eng=eng, **extra):
+            return eng.validate_input("image.generate", {"prompt": "a cup", **extra})["steps"]
+
+        assert steps(steps=int(lo)) == lo and steps(steps=int(hi)) == hi
+        assert steps() == default
+        for bad in (int(lo) - 1, int(hi) + 1):
+            with pytest.raises(EngineInputError):
+                eng.validate_input("image.generate", {"prompt": "a cup", "steps": bad})

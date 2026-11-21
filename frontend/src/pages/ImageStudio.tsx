@@ -22,6 +22,12 @@ const IMAGE_TASKS = new Set(Object.values(TASK));
 const MAX_CHARS = 1000;
 const MAX_SEED = 2 ** 32 - 1;
 
+/** [min, max, default] from a model's input_ranges, if complete. */
+function asRange(r: number[] | undefined): readonly [number, number, number] | undefined {
+  const [lo, hi, def] = r ?? [];
+  return lo !== undefined && hi !== undefined && def !== undefined ? [lo, hi, def] : undefined;
+}
+
 const defaultProjectName = () => `Images ${new Date().toLocaleDateString()}`;
 
 /**
@@ -123,16 +129,40 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
   // Only Stable Diffusion has a negative prompt and step/guidance knobs worth exposing.
   const knobs = engine?.features.includes("negative_prompt") ?? false;
 
+  // Steps: every image model has them; the range comes from the model itself.
+  const stepRange = asRange(engine?.input_ranges?.steps);
+  const guidanceRange = asRange(engine?.input_ranges?.guidance);
+  const presetSteps = (p: string) => {
+    const v = engine?.presets.find((x) => x.id === p)?.settings?.steps;
+    return typeof v === "number" ? v : undefined;
+  };
+
   useEffect(() => {
     // A sensible quality preset for the chosen engine: the middle one.
-    setPreset(engine?.presets[1]?.id ?? engine?.presets[0]?.id ?? "");
+    const first = engine?.presets[1]?.id ?? engine?.presets[0]?.id ?? "";
+    setPreset(first);
+    setSteps(presetSteps(first) ?? stepRange?.[2] ?? 25);
+    if (guidanceRange) setGuidance(guidanceRange[2]);
   }, [engine?.id]);
+
+  const choosePreset = (p: string) => {
+    setPreset(p);
+    const s = presetSteps(p);
+    if (s !== undefined) setSteps(s);
+  };
+  const changeSteps = (v: number) => {
+    setSteps(v);
+    // A preset owns its step count (Stable Diffusion), so a different number means Custom.
+    const owned = presetSteps(preset);
+    if (owned !== undefined && v !== owned) setPreset("");
+  };
+  const badSteps = !!stepRange && !(Number.isInteger(steps) && steps >= stepRange[0] && steps <= stepRange[1]);
 
   const seedValue = seed.trim() === "" ? undefined : Number(seed);
   const badSeed = seedValue !== undefined && !(Number.isInteger(seedValue) && seedValue >= 0 && seedValue <= MAX_SEED);
   const tooLong = prompt.length > MAX_CHARS || negative.length > MAX_CHARS;
   const needsPhoto = mode === "edit" && !refs.some((r) => r.role === "person");
-  const blocked = !engine || !prompt.trim() || tooLong || badSeed || needsPhoto || submitting;
+  const blocked = !engine || !prompt.trim() || tooLong || badSeed || badSteps || needsPhoto || submitting;
 
   const createProject = async (name = defaultProjectName()) => {
     const p = await api.createProject({ name, module: "image" });
@@ -165,7 +195,9 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
           ...(mode === "edit" ? { references: refs } : {}),
           ...(advanced && knobs && negative.trim() ? { negative_prompt: negative } : {}),
           ...(advanced && seedValue !== undefined ? { seed: seedValue } : {}),
-          ...(preset ? { preset } : knobs ? { steps, guidance } : {}),
+          ...(preset ? { preset } : {}),
+          ...(stepRange ? { steps } : {}),
+          ...(!preset && knobs ? { guidance } : {}),
         },
       }));
     } catch (e) {
@@ -279,6 +311,12 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
             <p id="image-model-label" className="text-sm font-medium">
               Model {!engine && <span className="font-normal text-muted">· choose one to start; Rasva remembers it</span>}
             </p>
+            {mode === "edit" && engines.some((e) => !e.tasks.includes(TASK.edit)) && (
+              <p className="text-xs text-muted">
+                Only models that can change a photo are listed.{" "}
+                {engines.filter((e) => !e.tasks.includes(TASK.edit)).map((e) => e.display_name).join(", ")} only makes pictures from a description.
+              </p>
+            )}
             {forMode.map((e) => (
               <button key={e.id} role="radio" aria-checked={engine?.id === e.id} onClick={() => chooseEngine(e.id)}
                 className={cn("min-h-11 rounded-lg border px-3 py-2 text-left", engine?.id === e.id ? "border-accent bg-accent/10" : "border-border")}>
@@ -290,8 +328,8 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
           {engine && engine.presets.length > 0 && <p className="mt-4 text-sm font-medium">Quality</p>}
           {engine && (
             <div role="radiogroup" aria-label="Quality" className="mt-2 grid gap-2">
-              {[...engine.presets, ...(advanced && knobs ? [{ id: "", label: "Custom", description: "Use the settings below." }] : [])].map((p) => (
-                <button key={p.id || "custom"} role="radio" aria-checked={preset === p.id} onClick={() => setPreset(p.id)}
+              {[...engine.presets, ...(knobs && (advanced || !preset) ? [{ id: "", label: "Custom", description: "Your own number of steps." }] : [])].map((p) => (
+                <button key={p.id || "custom"} role="radio" aria-checked={preset === p.id} onClick={() => choosePreset(p.id)}
                   className={cn("min-h-11 rounded-lg border px-3 py-2 text-left", preset === p.id ? "border-accent bg-accent/10" : "border-border")}>
                   <span className="block text-sm font-medium">{p.label}</span>
                   <span className="block text-xs text-muted">{p.description}</span>
@@ -299,17 +337,30 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
               ))}
             </div>
           )}
-          {advanced && knobs && !preset && (
-            <>
-              <label className="mt-4 block text-sm">
-                <span className="mb-1 flex justify-between font-medium">Steps <span className="text-muted tabular-nums">{steps}</span></span>
-                <input type="range" min={10} max={50} step={1} value={steps} onChange={(e) => setSteps(Number(e.target.value))} className="w-full accent-[var(--accent)]" />
+          {stepRange && (
+            <div className="mt-4">
+              <label htmlFor="image-steps" className="flex justify-between text-sm font-medium">
+                Steps <span className="font-normal text-muted">{stepRange[0]}–{stepRange[1]}</span>
               </label>
-              <label className="mt-4 block text-sm">
-                <span className="mb-1 flex justify-between font-medium">Follow the description <span className="text-muted tabular-nums">{guidance.toFixed(1)}</span></span>
-                <input type="range" min={1} max={15} step={0.5} value={guidance} onChange={(e) => setGuidance(Number(e.target.value))} className="w-full accent-[var(--accent)]" />
-              </label>
-            </>
+              <div className="mt-1 flex items-center gap-3">
+                <input type="range" min={stepRange[0]} max={stepRange[1]} step={1} value={Math.min(Math.max(steps, stepRange[0]), stepRange[1])}
+                  onChange={(e) => changeSteps(Number(e.target.value))} aria-label="Steps slider" className="w-full accent-[var(--accent)]" />
+                <input id="image-steps" inputMode="numeric" value={Number.isNaN(steps) ? "" : steps}
+                  onChange={(e) => changeSteps(e.target.value.trim() === "" ? NaN : Number(e.target.value))}
+                  className="min-h-11 w-16 rounded-lg border border-border bg-bg px-2 text-center text-sm tabular-nums" />
+              </div>
+              <p className={cn("mt-1 text-xs", badSteps ? "text-danger" : "text-muted")}>
+                {badSteps
+                  ? `Use a whole number from ${stepRange[0]} to ${stepRange[1]}.`
+                  : `More steps: more detail, slower. ${engine?.display_name} starts at ${stepRange[2]}.`}
+              </p>
+            </div>
+          )}
+          {advanced && knobs && !preset && guidanceRange && (
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 flex justify-between font-medium">Follow the description <span className="text-muted tabular-nums">{guidance.toFixed(1)}</span></span>
+              <input type="range" min={guidanceRange[0]} max={guidanceRange[1]} step={0.5} value={guidance} onChange={(e) => setGuidance(Number(e.target.value))} className="w-full accent-[var(--accent)]" />
+            </label>
           )}
           {engine && <LowMemoryToggle engine={engine} />}
           <p className="mt-4 text-xs text-muted">

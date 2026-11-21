@@ -103,6 +103,9 @@ class EngineDescriptor(BaseModel):
     # Language -> voice used when nothing better is known (no ratings yet).
     default_voices: dict[str, str] = {}
     presets: list[Preset] = []
+    # Numeric inputs the UI may offer, as [min, max, default] (e.g. "steps").
+    # validate_input enforces the same limits; this only tells the UI.
+    input_ranges: dict[str, list[float]] = {}
     # Third-party components with licences users should know about (PRD §28).
     license_notes: list[str] = []
 

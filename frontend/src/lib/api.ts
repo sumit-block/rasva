@@ -134,7 +134,9 @@ export interface EngineInfo {
   voices: Voice[];
   license_notes: string[];
   default_voices: Record<string, string>;
-  presets: { id: string; label: string; description: string }[];
+  presets: { id: string; label: string; description: string; settings?: Record<string, unknown> }[];
+  /** [min, max, default] for numeric inputs such as "steps". */
+  input_ranges?: Record<string, number[]>;
 }
 
 export type AppSettings = {

@@ -61,7 +61,6 @@ export function PoseStudio({ projectId, ensureProject, models }: {
   const [builtins, setBuiltins] = useState<BuiltInPose[]>([]);
   const [personId, setPersonId] = useState<string>();
   const [pose, setPose] = useState<PoseChoice>();
-  const [poseSource, setPoseSource] = useState<"figure" | "photo">("figure");
   const [identity, setIdentity] = useState<IdentityId>("balanced");
   const [extra, setExtra] = useState("");
   const [seed, setSeed] = useState("");
@@ -148,19 +147,17 @@ export function PoseStudio({ projectId, ensureProject, models }: {
   const generate = () => run(async () => {
     if (!editEngine || !personId || !pose) return;
     const pid = await ensureProject();
+    // Always the stick figure: on the M2 (2026-11-21) sending the original pose
+    // photo made Klein copy that person's face (docs/engines/pose-control.md).
     let poseId: string;
-    let source: "figure" | "photo" = "figure";
     if (pose.kind === "builtin") {
       const a = await builtInPoseAsset(pid, pose.pose, assets);
       if (!byId.has(a.id)) setAssets((prev) => [a, ...prev]);
       poseId = a.id;
-    } else if (poseSource === "photo" && Array.isArray(pose.asset.metadata.source_asset_ids)) {
-      poseId = String(pose.asset.metadata.source_asset_ids[0]); // the original pose photo
-      source = "photo";
     } else {
       poseId = pose.asset.id;
     }
-    upsert(await changePose(pid, editEngine.id, { personId, poseId, poseSource: source, identity, prompt: extra, seed: advanced ? seedValue : undefined }));
+    upsert(await changePose(pid, editEngine.id, { personId, poseId, poseSource: "figure", identity, prompt: extra, seed: advanced ? seedValue : undefined }));
   });
 
   // This project's pose changes, newest first (live updates win).
@@ -281,12 +278,6 @@ export function PoseStudio({ projectId, ensureProject, models }: {
               <input id="pose-seed" inputMode="numeric" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Random"
                 className="mt-1 min-h-11 w-48 rounded-lg border border-border bg-bg px-3 text-sm tabular-nums" />
               {badSeed && <p className="mt-1 text-xs text-danger">The seed must be a whole number from 0 to {MAX_SEED.toLocaleString()}.</p>}
-              {pose?.kind === "figure" && (
-                <label className="mt-4 flex items-start gap-2 text-sm">
-                  <input type="checkbox" className="mt-1" checked={poseSource === "photo"} onChange={(e) => setPoseSource(e.target.checked ? "photo" : "figure")} />
-                  <span>Send the pose photo instead of the stick figure<span className="block text-xs text-muted">Try this if the figure's pose isn't followed. Only the pose is meant to carry over.</span></span>
-                </label>
-              )}
             </>
           )}
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from rasva.config import DEFAULT_BUDGET_BYTES, DEFAULT_OS_RESERVE_BYTES, GB
 from rasva.db import dumps, loads, utcnow
+from rasva.services.memory import DEFAULT_SAFETY_MARGIN_BYTES
 
 DEFAULTS: dict[str, Any] = {
     "storage.budget_bytes": DEFAULT_BUDGET_BYTES,
@@ -15,6 +16,8 @@ DEFAULTS: dict[str, Any] = {
     "onboarding.completed": False,
     "onboarding.step": 0,  # resume point for an interrupted first-run setup
     "lan.enabled": False,
+    # Memory left over after an engine's measured peak before a cold start (PRD §24).
+    "memory.safety_margin_bytes": DEFAULT_SAFETY_MARGIN_BYTES,
 }
 
 # Validators keep obviously unsafe values out (e.g. a 0-byte OS reserve).
@@ -22,6 +25,7 @@ _LIMITS: dict[str, tuple[int, int]] = {
     "storage.budget_bytes": (5 * GB, 2000 * GB),
     "storage.os_reserve_bytes": (5 * GB, 500 * GB),
     "onboarding.step": (0, 20),
+    "memory.safety_margin_bytes": (0, 8 * GB),
 }
 _ENUMS: dict[str, set[Any]] = {"ui.mode": {"simple", "advanced"}}
 # Not settable through the generic API: LAN needs pairing + TLS (phase A5).

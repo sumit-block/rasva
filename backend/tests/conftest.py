@@ -5,7 +5,7 @@ import math
 import struct
 import time
 import wave
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from rasva.app import create_app
 from rasva.config import Paths, Settings
 from rasva.engines.contract import ModelArtifact, SystemFacts
+from rasva.services import memory as memory_svc
 from rasva.services import system_check
 
 BASE = "http://127.0.0.1:8765"
@@ -27,7 +28,34 @@ def settings(tmp_path: Path) -> Settings:
         cancel_grace_s=1.0,
         engine_idle_unload_s=300.0,
         max_upload_bytes=5 * 1024 * 1024,
+        memory_recheck_s=0.05,
     )
+
+
+class FakeMemory:
+    """Stands in for psutil so the memory guard never depends on the test host.
+
+    Plenty of memory by default. Tests change ``available`` or set ``hook`` to
+    compute a reading from the app's state at the moment it is taken.
+    """
+
+    def __init__(self) -> None:
+        self.total = 16 * 1024**3
+        self.available = 12 * 1024**3
+        self.hook: Callable[[], int] | None = None
+        self.reads = 0
+
+    def __call__(self) -> memory_svc.MemoryReading:
+        self.reads += 1
+        available = self.hook() if self.hook else self.available
+        return memory_svc.MemoryReading(total_bytes=self.total, available_bytes=available)
+
+
+@pytest.fixture(autouse=True)
+def memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
+    fake = FakeMemory()
+    monkeypatch.setattr(memory_svc, "read", fake)
+    return fake
 
 
 def make_client(settings: Settings, extra_engines: tuple[str, ...] = (), **kw) -> TestClient:

@@ -8,6 +8,12 @@
 - Cancellation is cooperative first (engine checks at safe points), then the
   worker is killed after a grace period.
 - A crashed worker fails only the current job; completed outputs are untouched.
+- Memory guard (PRD §24): before an engine loads cold, available memory must
+  cover the engine's measured peak plus a safety margin. If it does not, an idle
+  worker of another engine is unloaded and memory re-read; if there is still no
+  room the job stays queued with a "Waiting for memory" detail and is re-checked
+  every ``memory_recheck_s``. Jobs that load nothing (warm engine, model tasks,
+  light built-ins) never wait, and may run past a job that is waiting.
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from rasva.config import Settings
 from rasva.engines.registry import EngineRegistry, RegisteredEngine
@@ -32,6 +38,7 @@ from rasva.jobs.events import EventBus
 from rasva.jobs.states import TERMINAL, InvalidTransition, JobState
 from rasva.logging_setup import rotate_if_large
 from rasva.services import assets as asset_svc
+from rasva.services import memory as memory_svc
 from rasva.services import projects as project_svc
 from rasva.services.installer import (
     Downloader,
@@ -41,6 +48,7 @@ from rasva.services.installer import (
     InstallError,
     ModelStore,
 )
+from rasva.services.settings_store import SettingsStore
 from rasva.services.storage import StorageService
 
 log = logging.getLogger(__name__)
@@ -60,6 +68,7 @@ MSG_MEMORY_KILL = (
     "Your Mac ran low on memory and macOS stopped the engine. Your other work is safe. "
     "Close other apps or choose a lighter preset, then retry."
 )
+MemoryVerdict = Literal["go", "wait", "failed"]
 
 
 class WorkerGone(Exception):
@@ -156,6 +165,8 @@ class Orchestrator:
         self._worker: Worker | None = None
         self._current_job: str | None = None
         self._cancel = asyncio.Event()
+        # Set while the next heavy job is held back for memory; shown in status.
+        self._memory_wait: dict[str, Any] | None = None
         self._installer = Installer(
             settings,
             self._conn,
@@ -198,6 +209,8 @@ class Orchestrator:
         def _do() -> None:
             if self._current_job == job_id:
                 self._cancel.set()
+            # A job waiting for memory is still queued: re-select now.
+            self._wake.set()
 
         if self._loop and not self._loop.is_closed():
             self._loop.call_soon_threadsafe(_do)
@@ -208,6 +221,7 @@ class Orchestrator:
             "current_job": self._current_job,
             "resident_engine": w.engine_id if w and w.alive else None,
             "resident_engine_loaded": bool(w and w.alive and w.loaded),
+            "memory_wait": dict(self._memory_wait) if self._memory_wait else None,
         }
 
     # ---- main loop ----
@@ -215,9 +229,11 @@ class Orchestrator:
     async def _run(self) -> None:
         while not self._stopping:
             try:
-                job = repo.next_queued(self._conn)
+                job = await self._select()
                 if job is None:
-                    await self._idle_wait()
+                    await self._idle_wait(
+                        self._settings.memory_recheck_s if self._memory_wait else None
+                    )
                     continue
                 await self._execute(job)
             except asyncio.CancelledError:
@@ -227,9 +243,9 @@ class Orchestrator:
                 log.exception("orchestrator loop error")
                 await asyncio.sleep(1)
 
-    async def _idle_wait(self) -> None:
+    async def _idle_wait(self, recheck_s: float | None = None) -> None:
         self._wake.clear()
-        timeout: float | None = None
+        timeout = recheck_s
         w = self._worker
         if w and w.alive:
             remaining = self._settings.engine_idle_unload_s - (time.monotonic() - w.last_used)
@@ -237,9 +253,114 @@ class Orchestrator:
                 log.info("unloading idle engine %s", w.engine_id)
                 await self._drop_worker()
                 return
-            timeout = remaining
+            timeout = remaining if timeout is None else min(timeout, remaining)
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._wake.wait(), timeout)
+
+    # ---- memory guard (PRD §24) ----
+
+    async def _select(self) -> dict[str, Any] | None:
+        """Pick the next job to run, holding back a cold start that has no room.
+
+        Queue order is kept for every job that loads an engine. Only jobs that
+        need no memory check may run past a job that is waiting for memory.
+        """
+        while True:
+            queued = repo.queued(self._conn)
+            if not queued:
+                self._memory_wait = None
+                return None
+            head = queued[0]
+            verdict = await self._memory_verdict(head)
+            if verdict == "failed":
+                continue
+            if verdict == "go":
+                self._memory_wait = None
+                return head
+            return next((j for j in queued[1:] if not self._needs_memory_check(j)), None)
+
+    def _needs_memory_check(self, job: dict[str, Any]) -> bool:
+        if job["task"] in MODEL_TASKS:
+            return False
+        engine = self._registry.get(job["engine_id"])
+        if engine is None or engine.descriptor.approx_peak_memory_bytes <= 0:
+            return False
+        d = engine.descriptor
+        if d.requires_install and not ModelStore(self._conn).is_installed(d.id):
+            return False  # _execute fails it straight away
+        w = self._worker
+        # Warm: the engine is already loaded, so starting adds nothing.
+        return not (w and w.alive and w.loaded and w.engine_id == d.id)
+
+    async def _memory_verdict(self, job: dict[str, Any]) -> MemoryVerdict:
+        if not self._needs_memory_check(job):
+            return "go"
+        engine = self._registry.get(job["engine_id"])
+        assert engine is not None
+        d = engine.descriptor
+        margin = int(SettingsStore(self._conn).get("memory.safety_margin_bytes"))
+        needed = d.approx_peak_memory_bytes + margin
+        reading = memory_svc.read()
+        if needed > reading.total_bytes:
+            self._fail(
+                job["id"],
+                "not_enough_memory",
+                f"{d.display_name} needs about {memory_svc.format_gb(needed)} of memory, "
+                f"more than this Mac has ({memory_svc.format_gb(reading.total_bytes)}). "
+                "Choose a lighter engine, or lower the memory safety margin in Settings.",
+            )
+            return "failed"
+        if reading.available_bytes >= needed:
+            return "go"
+        w = self._worker
+        if w and w.alive:
+            # Another engine (or a worker that never finished loading) is idle:
+            # it would be unloaded before this load anyway, so free it now.
+            log.info(
+                "unloading idle engine to make room",
+                extra={"engine": w.engine_id, "for_engine": d.id},
+            )
+            await self._drop_worker()
+            reading = memory_svc.read()
+            if reading.available_bytes >= needed:
+                return "go"
+        self._hold_for_memory(job, d.display_name, needed, reading)
+        return "wait"
+
+    def _hold_for_memory(
+        self,
+        job: dict[str, Any],
+        engine_name: str,
+        needed: int,
+        reading: memory_svc.MemoryReading,
+    ) -> None:
+        first = not self._memory_wait or self._memory_wait["job_id"] != job["id"]
+        self._memory_wait = {
+            "job_id": job["id"],
+            "engine_id": job["engine_id"],
+            "needed_bytes": needed,
+            "available_bytes": reading.available_bytes,
+        }
+        if first:
+            log.info(
+                "job waiting for memory",
+                extra={
+                    "job": job["id"],
+                    "engine": job["engine_id"],
+                    "needed_bytes": needed,
+                    "available_bytes": reading.available_bytes,
+                },
+            )
+        # Only stable text goes on the job, so it is written once, not every re-check.
+        detail = (
+            f"Waiting for memory: {engine_name} needs about "
+            f"{memory_svc.format_gb(needed)} free. Close other apps or wait for them "
+            "to finish; this starts on its own."
+        )
+        if job["stage_detail"] != detail:
+            updated = repo.set_queued_detail(self._conn, job["id"], detail)
+            if updated:
+                self._publish(updated)
 
     async def _drop_worker_quietly(self) -> None:
         w, self._worker = self._worker, None

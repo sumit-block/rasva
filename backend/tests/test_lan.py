@@ -170,6 +170,7 @@ def test_pair_and_use_over_https(lan_settings, tmp_path):
         assert (
             phone.patch("/settings", json={"storage.budget_bytes": 10 * 1024**3}).status_code == 403
         )
+        assert phone.patch("/settings", json={"memory.safety_margin_bytes": 0}).status_code == 403
         assert phone.patch("/settings", json={"ui.mode": "advanced"}).status_code == 200
         assert phone.get("/system/status").json()["client"]["kind"] == "device"
 

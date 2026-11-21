@@ -134,6 +134,26 @@ def next_queued(conn: sqlite3.Connection) -> dict[str, Any] | None:
     return row_to_job(row) if row else None
 
 
+def queued(conn: sqlite3.Connection, limit: int = 50) -> list[dict[str, Any]]:
+    """Queued jobs in the order they will run."""
+    rows = conn.execute(
+        "SELECT * FROM jobs WHERE state = ? ORDER BY created_at, rowid LIMIT ?",
+        (JobState.QUEUED, limit),
+    )
+    return [row_to_job(r) for r in rows]
+
+
+def set_queued_detail(
+    conn: sqlite3.Connection, job_id: str, detail: str | None
+) -> dict[str, Any] | None:
+    """Set the detail line of a job that is still queued. None if it has moved on."""
+    cur = conn.execute(
+        "UPDATE jobs SET stage_detail = ?, updated_at = ? WHERE id = ? AND state = ?",
+        (detail, utcnow(), job_id, JobState.QUEUED),
+    )
+    return get(conn, job_id) if cur.rowcount == 1 else None
+
+
 def transition(
     conn: sqlite3.Connection,
     job_id: str,

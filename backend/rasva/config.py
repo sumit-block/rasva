@@ -168,6 +168,8 @@ class Settings:
     # return unified memory to macOS.
     engine_idle_unload_s: float = 300.0
     cancel_grace_s: float = 10.0
+    # How often a job waiting for memory re-checks before a cold engine start.
+    memory_recheck_s: float = 5.0
     enable_test_engines: bool = False
     frontend_dist: Path | None = None
     # Tests only: permit http:// artifact URLs on loopback. Real installs are https-only.

@@ -140,8 +140,55 @@ export function SettingsPage() {
             <CardDescription>{storage.error?.message ?? "Measuring…"}</CardDescription>
           )}
         </Card>
+        {prefs.client === "local" && <MemoryCard />}
         {prefs.client === "local" && <CleanupCard onCleaned={() => void storage.reload()} />}
       </div>
     </>
+  );
+}
+
+function MemoryCard() {
+  const settings = useAsync(() => api.settings());
+  const [marginGb, setMarginGb] = useState("");
+  const [message, setMessage] = useState<{ tone: "info" | "error"; text: string }>();
+  const current = settings.data?.["memory.safety_margin_bytes"];
+
+  const save = async () => {
+    const gb = Number(marginGb);
+    if (marginGb.trim() === "" || !Number.isFinite(gb) || gb < 0) return;
+    try {
+      await api.updateSettings({ "memory.safety_margin_bytes": Math.round(gb * GB) });
+      setMessage({ tone: "info", text: `Memory safety margin set to ${gb} GB.` });
+      setMarginGb("");
+      await settings.reload();
+    } catch (e) {
+      setMessage({ tone: "error", text: (e as Error).message });
+    }
+  };
+
+  return (
+    <Card>
+      <CardTitle>Memory</CardTitle>
+      <CardDescription>
+        An engine starts only when your Mac has enough free memory for it plus this margin. Otherwise its job waits and starts
+        on its own when memory frees up. A smaller margin starts jobs sooner but risks a slow Mac.
+      </CardDescription>
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          <span className="mb-1 block font-medium">Safety margin (GB, 0–8)</span>
+          <input
+            inputMode="decimal"
+            value={marginGb}
+            onChange={(e) => setMarginGb(e.target.value)}
+            placeholder={current != null ? String(+(current / GB).toFixed(1)) : ""}
+            className="min-h-11 w-32 rounded-lg border border-border bg-bg px-3"
+          />
+        </label>
+        <Button variant="secondary" onClick={save} disabled={!marginGb}>
+          Save margin
+        </Button>
+      </div>
+      {message && <Notice tone={message.tone} className="mt-3">{message.text}</Notice>}
+    </Card>
   );
 }

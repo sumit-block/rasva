@@ -321,6 +321,7 @@ def get(
                 engine_id=c["engine_id"],
                 license_class=engine.descriptor.license_class if engine else "unknown",
                 installed_bytes=(model or {}).get("installed_bytes", 0),
+                license_accepted=_license_accepted(conn, c["engine_id"]),
                 runs=[
                     RunView(r["status"] or "queued", r["metrics"], r["scores"])
                     for r in runs
@@ -415,3 +416,17 @@ def open_job_ids(conn: sqlite3.Connection, experiment_id: str) -> list[str]:
     ).fetchall()
     terminal = {s.value for s in TERMINAL}
     return [r["id"] for r in rows if r["state"] not in terminal]
+
+
+def _license_accepted(conn: sqlite3.Connection, engine_id: str) -> bool:
+    """True if the engine's current install was made with the licence accepted.
+
+    Only 'unknown' licences stay failing: they have no reviewed terms to accept.
+    """
+    row = conn.execute(
+        "SELECT json_extract(inputs, '$.license_accepted') AS ok FROM jobs"
+        " WHERE task = 'model.install' AND engine_id = ? AND state = 'completed'"
+        " ORDER BY created_at DESC LIMIT 1",
+        (engine_id,),
+    ).fetchone()
+    return bool(row and row[0])

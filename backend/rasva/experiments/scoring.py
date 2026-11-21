@@ -105,6 +105,8 @@ class CandidateView:
     installed_bytes: int
     runs: list[RunView]
     usability: int | None = None
+    # The owner accepted this engine's licence when installing it (install job input).
+    license_accepted: bool = False
 
 
 @dataclass
@@ -267,7 +269,9 @@ def summarize(
 
 def _gates(c: CandidateView, b: dict[str, Any], total_memory_bytes: int) -> list[Gate]:
     gates = []
-    if c.license_class in ("restricted", "unknown"):
+    if c.license_class == "restricted" and c.license_accepted:
+        gates.append(Gate("licence", True, "Restricted licence, accepted by you at install."))
+    elif c.license_class in ("restricted", "unknown"):
         gates.append(Gate("licence", False, "Licence is restricted or unverified; review needed."))
     else:
         gates.append(Gate("licence", True, "Licence allows local use."))

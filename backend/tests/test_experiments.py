@@ -64,6 +64,36 @@ def test_gates_override_scores():
     assert {g.id for g in f.gates if g.passed is False} == {"reliability"}
 
 
+def test_accepted_restricted_licence_passes_the_gate():
+    accepted = CandidateView(
+        "a", "e", "restricted", GB, [run(pronunciation=5)], license_accepted=True
+    )
+    unknown = CandidateView("u", "e", "unknown", GB, [run(pronunciation=5)], license_accepted=True)
+    a, u = summarize([accepted, unknown], 16 * GB)
+    assert next(g for g in a.gates if g.id == "licence").passed is True
+    assert next(g for g in u.gates if g.id == "licence").passed is False
+
+
+def test_licence_acceptance_is_read_from_the_install_job(settings):
+    from rasva.db import connect
+    from rasva.experiments.service import _license_accepted
+    from rasva.jobs import repository as repo
+
+    with make_client(settings):
+        conn = connect(settings.paths.db_file)
+        assert _license_accepted(conn, "sd15") is False
+        job = repo.create(
+            conn,
+            project_id=None,
+            task="model.install",
+            engine_id="sd15",
+            inputs={"license_accepted": True},
+        )
+        assert _license_accepted(conn, "sd15") is False  # not finished
+        conn.execute("UPDATE jobs SET state = 'completed' WHERE id = ?", (job["id"],))
+        assert _license_accepted(conn, "sd15") is True
+
+
 def test_skipped_runs_do_not_count_against_reliability():
     c = CandidateView("c", "e", "permissive", GB, [run(pronunciation=4), RunView("skipped")])
     s = summarize([c], 16 * GB)[0]

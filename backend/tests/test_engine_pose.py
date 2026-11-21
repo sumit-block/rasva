@@ -162,10 +162,11 @@ def run(engine, tmp_path, cancel=None):
 # ---- descriptor and gating ----
 
 
-def test_registered_as_unconfirmed_image_tool():
+def test_registered_as_confirmed_image_tool():
     d = EngineRegistry().get(P.ENGINE_ID).descriptor
     assert d.modality == "image" and d.tasks == [P.TASK]
-    assert d.license_class == "unknown"  # installer asks until the owner confirms
+    assert d.license_class == "permissive"  # owner accepted Apache-2.0 on 2026-11-21
+    assert d.artifacts, "manifest.json is pinned"
     assert d.requirements_lock == "requirements.lock" and d.python_version == "3.12"
 
 
@@ -193,14 +194,21 @@ def test_pin_spec_lists_onnx_only():
     assert "yolox_l.onnx" in spec and "dw-ll_ucoco_384.onnx" in spec and '.pth"' not in spec
 
 
-def test_listed_but_not_installable_while_unconfirmed(settings, monkeypatch, tmp_path):
+def test_not_installable_without_lockfile(settings, monkeypatch, tmp_path):
     monkeypatch.setattr(P, "LOCKFILE", tmp_path / "requirements.lock")  # not generated
     set_host(monkeypatch, apple_silicon=True)
     set_pinned(monkeypatch, P.PoseFinderEngine, pinned=True)
     with make_client(settings) as client:
         info = client.get(f"/api/v1/models/{P.ENGINE_ID}").json()
-        assert info["needs_license_confirmation"] is True
-        assert info["compatibility"]["compatible"] is False  # still no lockfile
+        assert info["needs_license_confirmation"] is False
+        assert info["compatibility"]["compatible"] is False
+
+
+def test_installable_when_pinned_and_locked(settings, monkeypatch):
+    set_host(monkeypatch, apple_silicon=True)
+    with make_client(settings) as client:
+        info = client.get(f"/api/v1/models/{P.ENGINE_ID}").json()
+        assert info["compatibility"]["compatible"] is True, info["compatibility"]
 
 
 def test_verify(tmp_path):

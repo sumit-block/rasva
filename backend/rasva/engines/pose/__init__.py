@@ -1,9 +1,9 @@
 """Pose finder (phase I2): photo -> body pose -> OpenPose-style stick figure.
 
-DRAFT, not installed. The download list (manifest.json) and the software lock
-(requirements.lock) are deliberately missing until the owner confirms the
-licences in docs/engines/pose-control.md. Until then the engine reports itself
-incompatible with the exact steps to finish it.
+The owner accepted the licences on 2026-11-21 (docs/engines/pose-control.md);
+the download list (manifest.json) and the software lock (requirements.lock) are
+pinned. Without them the engine reports itself incompatible with the steps to
+finish it.
 
 How it works (DWPose, ONNX, run with onnxruntime; no torch, no pickle files):
 
@@ -93,9 +93,8 @@ class PoseFinderEngine(Engine):
         tasks=[TASK],
         features=["pose_extraction"],
         license="Apache-2.0 (code and weights; training-data terms not yet checked)",
-        # 'unknown' until the owner confirms (docs/engines/pose-control.md), so the
-        # installer asks before downloading.
-        license_class="unknown",
+        # Apache-2.0, accepted by the owner on 2026-11-21 (docs/engines/pose-control.md).
+        license_class="permissive",
         license_notes=[
             "DWPose's code and model files are published under Apache-2.0. The terms of "
             "the datasets it was trained on (COCO-WholeBody and others) have not been "

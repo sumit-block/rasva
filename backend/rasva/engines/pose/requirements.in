@@ -1,6 +1,6 @@
 # Inputs for the pose finder (DWPose, ONNX) engine environment (ADR-0003, phase I2).
-# NOT LOCKED YET: generate requirements.lock only after the owner confirms the
-# licences in docs/engines/pose-control.md. From backend/rasva/engines/pose/:
+# Locked 2026-11-21 after the owner accepted the licences in docs/engines/pose-control.md.
+# To regenerate, from backend/rasva/engines/pose/:
 #   MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements.in --generate-hashes --only-binary :all: \
 #     --python-version 3.12 --python-platform aarch64-apple-darwin \
 #     --no-header --no-annotate -o requirements.lock

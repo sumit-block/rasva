@@ -20,7 +20,9 @@ would undercount silently.
 - Engine workers run with `HF_HOME`, `TORCH_HOME`, `PIP_CACHE_DIR`,
   `XDG_CACHE_HOME` and `TMPDIR` pointed inside the root, and with
   `HF_HUB_OFFLINE=1` so **inference can never trigger a download**. Downloads
-  happen only through the explicit installer, after preflight.
+  happen only through the explicit installer, after preflight. Because those
+  flags only reach libraries that read them, workers also block all network
+  sockets and lookups ([ADR-0007](0007-worker-network-guard.md)).
 - Usage is measured from allocated disk blocks, not from database sums, and
   cached for about 10 s.
 - Preflight takes the **peak** bytes needed (including temporary copies during

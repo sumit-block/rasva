@@ -148,6 +148,12 @@ function ImageGroupCard({ group, onChange }: { group: ImageGroup; onChange: (g: 
         {favourite && " · your favourite"}
         {!favourite && group.current_job_id === selected.id && " · current (newest)"}
       </p>
+      {typeof selected.metrics.improved_instruction === "string" && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer text-muted">Show improved instruction</summary>
+          <p className="mt-1 whitespace-pre-wrap rounded-md bg-surface-2 p-2">{selected.metrics.improved_instruction}</p>
+        </details>
+      )}
 
       {versions.length > 1 && (
         <div role="radiogroup" aria-label="Versions" className="mt-3 flex gap-2 overflow-x-auto pb-1">

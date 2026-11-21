@@ -38,6 +38,8 @@ class FakeRuntime:
         self.built: list[dict] = []
         self.saved_to: list[str] = []
         self.calls: list[dict] = []
+        self.rewrites: list[tuple] = []
+        self.rewrite_error = False
         self.pixels = np.full((8, 8, 3), 128, dtype=np.uint8) if pixels is None else pixels
 
         class Img:
@@ -89,6 +91,12 @@ class FakeRuntime:
                     for cb in self.callbacks.items:
                         cb.call_in_loop(t, kw["seed"], kw["prompt"], None, None, None)
                 return types.SimpleNamespace(image=Img(rt.pixels, mode))
+
+            def rewrite_prompt(self, prompt, images):
+                rt.rewrites.append((prompt, list(images)))
+                if rt.rewrite_error:
+                    raise ValueError(f"The rewrite reply could not be parsed: {prompt!r}")
+                return "  Replace the jacket with a dark green wool jacket;  keep the face.  "
 
             def save_model(self, base_path):
                 rt.saved_to.append(base_path)
@@ -317,3 +325,37 @@ def test_cancel_stops_between_steps(fake, tmp_path):
     cancel.set()
     with pytest.raises(Canceled):
         run(loaded(tmp_path), tmp_path, cancel=cancel)
+
+
+# ---- improve my instruction (edits) ----
+
+
+def test_improve_rewrites_the_instruction_and_edits_with_it(fake, tmp_path):
+    rt = fake()
+    engine = loaded(tmp_path)
+    refs = [{"asset_id": "a", "role": "person", "path": photo(tmp_path)}]
+    result, _, progress = run(engine, tmp_path, "image.edit", references=refs, improve=True)
+    ((asked, images),) = rt.rewrites
+    assert asked == "a red kite over hills" and len(images) == 1
+    (call,) = rt.calls
+    assert call["prompt"] == "Replace the jacket with a dark green wool jacket; keep the face."
+    assert call["enhance_prompt"] is False  # mflux's own mode would log both texts
+    assert result.metrics["improved_instruction"] == call["prompt"]
+    assert "Improving your instruction" in [d for _, d in progress]
+    assert "prompt" not in result.outputs[0].metadata
+
+
+def test_improve_is_for_edits_only():
+    with pytest.raises(EngineInputError):
+        Q.Qwen21TurboEngine().validate_input("image.generate", {"prompt": "a cup", "improve": True})
+
+
+def test_improve_failure_never_quotes_the_text(fake, tmp_path):
+    rt = fake()
+    rt.rewrite_error = True
+    refs = [{"asset_id": "a", "role": "person", "path": photo(tmp_path)}]
+    with pytest.raises(EngineError) as e:
+        run(loaded(tmp_path), tmp_path, "image.edit", references=refs, improve=True)
+    assert e.value.code == "improve_failed"
+    assert "red kite" not in str(e.value) and e.value.__cause__ is None
+    assert e.value.__suppress_context__

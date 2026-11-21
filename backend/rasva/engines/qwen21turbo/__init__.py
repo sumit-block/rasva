@@ -14,8 +14,12 @@ relies on:
   values), so Rasva offers steps (1-8) and size only. Sizes are multiples of 32;
   below 1024 px Turbo turns fine detail into a pixel grid.
 - Rasva passes explicit width and height (mflux would otherwise take the aspect
-  ratio of the last reference) and keeps prompt rewriting, auto-masks and
-  self-verification off: they would run extra text generation over the owner's words.
+  ratio of the last reference). Auto-masks and self-verification stay off.
+- "Improve my instruction" (edits only, ``improve``): Rasva calls
+  ``rewrite_prompt(prompt, images)`` and edits with the result. Not mflux's
+  ``enhance_prompt=True``, which writes the original and rewritten text to its log.
+  The rewritten text is returned in the job's metrics (never logged) so the owner
+  can read what was used.
 - The output is RGBA; Rasva flattens it onto white and saves the pixels itself,
   so the prompt and reference paths never go into the file.
 
@@ -107,7 +111,9 @@ class Qwen21TurboEngine(Engine):
         version="2.1-turbo-q4",
         modality="image",
         tasks=list(TASKS),
-        features=["prompt", "seed", "references", "presets"],
+        # "improve_instruction": edits can have Qwen's own text model rewrite the
+        # instruction first (mflux rewrite_prompt; needs a photo, runs on this Mac).
+        features=["prompt", "seed", "references", "presets", "improve_instruction"],
         license="Qwen Research License (research or evaluation only); mflux is MIT",
         license_class="restricted",
         license_notes=[
@@ -228,6 +234,10 @@ class Qwen21TurboEngine(Engine):
         refs = inputs.get("references") or []
         if task == "image.generate" and refs:
             raise EngineInputError("To use photos, edit instead of generating from text.")
+        if inputs.get("improve"):
+            if task != "image.edit":
+                raise EngineInputError("Improving the instruction works when editing a photo.")
+            out["improve"] = True
         if task == "image.edit":
             if not refs:
                 raise EngineInputError("Choose at least one photo to edit.")
@@ -275,10 +285,18 @@ class Qwen21TurboEngine(Engine):
                     width, height = fit_size(main.width, main.height)
             ctx.report_progress(0.0, "Reading your photos" if refs else "Starting")
             reset_peak(mx)
-            self._job = {"ctx": ctx, "steps": inputs["steps"]}
             started = time.perf_counter()
+            prompt, improved, improve_s = inputs["prompt"], None, None
+            if inputs.get("improve"):
+                ctx.report_progress(0.0, "Improving your instruction")
+                improved = self._improve(prompt, paths)
+                improve_s = round(time.perf_counter() - started, 3)
+                prompt = improved
+                ctx.raise_if_canceled()
+            started = time.perf_counter()  # generation time excludes the rewrite
+            self._job = {"ctx": ctx, "steps": inputs["steps"]}
             result = self._model.generate_image(
-                seed=inputs["seed"], prompt=inputs["prompt"],
+                seed=inputs["seed"], prompt=prompt,
                 num_inference_steps=inputs["steps"], guidance=1.0,
                 width=width, height=height, image_paths=paths or None,
                 enhance_prompt=False, verify=False,
@@ -312,8 +330,25 @@ class Qwen21TurboEngine(Engine):
                 "steps": inputs["steps"], "width": width, "height": height,
                 "references": len(refs), "device": "mlx", "quantization": BITS,
                 "gpu_peak_bytes": peak(mx),
+                # Shown to the owner on the result; job metrics are never logged.
+                **({"improved_instruction": improved, "improve_s": improve_s} if improved else {}),
             },
         )  # fmt: skip
+
+    def _improve(self, prompt: str, paths: list[str]) -> str:
+        """Qwen's own rewrite of an edit instruction, from the photos (greedy, so the
+        same instruction and photos give the same text). Errors never quote the text."""
+        try:
+            text = " ".join(str(self._model.rewrite_prompt(prompt, paths)).split())
+        except Exception:
+            text = ""
+        if not text:
+            raise EngineError(
+                "improve_failed",
+                "The instruction could not be improved. Try again without "
+                "“Improve my instruction”.",
+            ) from None
+        return text[:MAX_PROMPT_CHARS]
 
     def unload(self) -> None:
         self._model = None

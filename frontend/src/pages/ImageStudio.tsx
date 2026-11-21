@@ -122,6 +122,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
   const [steps, setSteps] = useState(25);
   const [guidance, setGuidance] = useState(7.5);
   const [seed, setSeed] = useState("");
+  const [improve, setImprove] = useState(false);
   const [refs, setRefs] = useState<ReferenceInput[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
@@ -156,6 +157,8 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
     const owned = presetSteps(preset);
     if (owned !== undefined && v !== owned) setPreset("");
   };
+  // Qwen-Image can rewrite an edit instruction with its own text model first (on this Mac).
+  const canImprove = mode === "edit" && (engine?.features.includes("improve_instruction") ?? false);
   const badSteps = !!stepRange && !(Number.isInteger(steps) && steps >= stepRange[0] && steps <= stepRange[1]);
 
   const seedValue = seed.trim() === "" ? undefined : Number(seed);
@@ -193,6 +196,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
         inputs: {
           prompt,
           ...(mode === "edit" ? { references: refs } : {}),
+          ...(canImprove && improve ? { improve: true } : {}),
           ...(advanced && knobs && negative.trim() ? { negative_prompt: negative } : {}),
           ...(advanced && seedValue !== undefined ? { seed: seedValue } : {}),
           ...(preset ? { preset } : {}),
@@ -277,6 +281,18 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
             <span>{knobs ? "Only about the first 60 words are used." : mode === "edit" ? "Say what to keep and what to change." : ""}</span>
             <span className={cn(prompt.length > MAX_CHARS && "text-danger")}>{prompt.length} / {MAX_CHARS}</span>
           </div>
+          {canImprove && (
+            <label className="mt-3 flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1" checked={improve} onChange={(e) => setImprove(e.target.checked)} />
+              <span>
+                Improve my instruction <span className="text-muted">(slower)</span>
+                <span className="block text-xs text-muted">
+                  The model looks at your photos and rewrites a short instruction in more detail before editing, on this
+                  Mac. The result shows what it used.
+                </span>
+              </span>
+            </label>
+          )}
           {advanced && (
             <>
               {knobs && (

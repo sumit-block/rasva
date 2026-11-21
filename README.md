@@ -25,6 +25,26 @@ scripts/dev.sh            # backend :8765 + Vite hot reload at http://127.0.0.1:
 Data goes to `~/Library/Application Support/Rasva Studio`. Set `RASVA_HOME` to
 put it somewhere else; `dev.sh` uses `./.rasva-dev`.
 
+**Without the terminal (macOS).** Make the apps once:
+
+```bash
+scripts/make_mac_app.sh                 # or: --dest <folder>; default ~/Applications
+```
+
+- Open **Rasva Studio** from Finder, Launchpad or Spotlight. It builds the UI
+  only when needed, starts the server unless it is already running, and opens
+  http://127.0.0.1:8765.
+- While Rasva runs, the app stays in the Dock. Quit it to stop Rasva, or open
+  **Stop Rasva**.
+- If something fails, a dialog says what went wrong and where the log is
+  (`logs/launcher.log` in the data folder).
+- If this folder is inside Downloads, Desktop or Documents, macOS asks each
+  app once for permission to read it (again after remaking the apps).
+- Uninstall: quit Rasva Studio and move both apps to the Trash. Your data is
+  not touched.
+
+Details and alternatives are in [docs/mac-launcher.md](docs/mac-launcher.md).
+
 ## Test
 
 ```bash
@@ -56,6 +76,7 @@ docs/engines/          per-engine decisions, limitations and licences
 scripts/pin_kokoro.py  pins Kokoro's model files (commit + SHA-256) into its manifest
 scripts/pin_engine.py  same for Chatterbox and IndicF5 (several repositories per engine)
 scripts/lock_engine.sh builds a hash-pinned lockfile for an engine installed from GitHub (IndicF5)
+scripts/make_mac_app.sh makes the Rasva Studio / Stop Rasva apps; they run scripts/mac_launcher.sh
 ```
 
 ## Architecture in one paragraph
@@ -199,6 +220,7 @@ pronunciation entry does not mark existing takes as outdated.
 | Offline test | Done (automated): no outbound connections from the app process during normal use; engine workers run with offline flags **and cannot open network connections or look up hosts during load and generation** (Python-level socket guard, blocked attempts named in the engine log; [ADR-0007](docs/adr/0007-worker-network-guard.md)); UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off, and loading each installed engine under the guard |
 | Mac sleep guidance | Shown when Wi-Fi access is on |
 | Memory guard (PRD §24) | Done (automated tests with mocked memory readings): cold starts wait until available memory covers the engine's peak plus a 1 GB margin, after unloading an idle other engine; status and Jobs page show memory ([details](#memory-guard-prd-24)). **Still to do on the M2:** real engines under the guard, and how quickly `available` recovers after an engine exits. With the measured peaks, Stable Diffusion needs 10 GB available and Chatterbox 7 GB; on 2026-11-20, with other work open, psutil reported 5.9 GB, so both would have waited, and even a 0 margin would not have let Stable Diffusion (9 GB) start. Whether that is acceptable is an owner decision. While a job waits, other jobs that load an engine (for example a Kokoro narration that would fit) wait behind it until it starts or is cancelled |
+| App launches without the terminal | Built: `scripts/make_mac_app.sh` makes Rasva Studio and Stop Rasva apps ([details](docs/mac-launcher.md)). Tested with `open` on a dev port from a copy outside Downloads. **Still to do on the M2:** a Finder double-click, and allowing access to Downloads on first launch |
 | Usability testing · release checklist | Needs people and the M2 |
 
 To use Rasva from a phone: on the Mac, open Settings → Phone & other devices →

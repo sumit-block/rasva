@@ -122,6 +122,8 @@ export interface EngineInfo {
   approx_download_bytes: number;
   approx_installed_bytes: number;
   download_bytes: number;
+  /** Bytes of a paused download already on disk (not installed only); Install resumes it. */
+  downloaded_bytes: number;
   required_bytes: number;
   installed_bytes: number;
   install_state: "built_in" | "not_installed" | "installing" | "installed" | "failed" | "removing";
@@ -244,6 +246,8 @@ export const api = {
     request<Job>(`/models/${id}/install`, { method: "POST", body: json({ accept_license: acceptLicense }) }),
   updateModel: (id: string) => request<Job>(`/models/${id}/update`, { method: "POST" }),
   removeModel: (id: string) => request<Job>(`/models/${id}`, { method: "DELETE" }),
+  discardDownload: (id: string) =>
+    request<{ freed_bytes: number }>(`/models/${id}/download`, { method: "DELETE" }),
   settings: () => request<AppSettings>("/settings"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PATCH", body: json(body) }),

@@ -585,6 +585,42 @@ class Installer:
 
     # ---- sizing ----
 
+    def downloaded_bytes(self, engine: RegisteredEngine) -> int:
+        """Model bytes already on disk: finished files plus resumable partial ones.
+
+        Non-zero for an engine that is not installed means a paused download:
+        installing again resumes it (``.part`` files and HTTP Range)."""
+        d = engine.descriptor
+        model_dir = self._paths.model_dir(d.modality, d.id)
+        have = 0
+        for a in d.artifacts:
+            dest = model_dir / a.path
+            if dest.is_file() and dest.stat().st_size == a.size_bytes:
+                have += a.size_bytes
+                continue
+            part = self._downloader.part_path(a)
+            if part.exists():
+                have += min(part.stat().st_size, a.size_bytes)
+        return have
+
+    def discard_download(self, engine: RegisteredEngine) -> int:
+        """Delete a paused download (partial and finished files, any half-built
+        environment) of an engine that is not installed. Returns bytes freed."""
+        d = engine.descriptor
+        if self._store.get(d.id) is not None:
+            raise InstallError("installed", "This engine is installed; remove it instead.")
+        model_dir = self._paths.model_dir(d.modality, d.id)
+        freed = disk_usage_bytes(model_dir) + disk_usage_bytes(self._paths.env_dir(d.id))
+        shutil.rmtree(model_dir, ignore_errors=True)
+        shutil.rmtree(self._paths.env_dir(d.id), ignore_errors=True)
+        for a in d.artifacts:
+            part = self._downloader.part_path(a)
+            if part.exists():
+                freed += part.stat().st_size
+                part.unlink(missing_ok=True)
+        self._storage.invalidate()
+        return freed
+
     def required_bytes(self, engine: RegisteredEngine) -> int:
         """Peak extra space an install needs, net of finished and partial files."""
         d = engine.descriptor

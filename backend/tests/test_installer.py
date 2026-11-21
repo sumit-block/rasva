@@ -312,6 +312,49 @@ def test_cancel_keeps_partial_and_resume_continues(isettings, server):
         c.__exit__(None, None, None)
 
 
+def test_pause_shows_downloaded_bytes_and_can_be_discarded(isettings, server):
+    """Pause = cancel during download: parts are kept and reported, so the Models
+    page can offer Resume; Discard deletes them, and only when asked."""
+    server.delay_per_chunk = 0.05
+    c = client_with(isettings, make_engine("Pause", artifacts(server)))
+    try:
+        assert model(c, "test-pause")["downloaded_bytes"] == 0
+        job = install(c, "test-pause").json()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            j = c.get(f"/api/v1/jobs/{job['id']}").json()
+            if j["state"] == "downloading" and (j["progress"] or 0) > 0.1:
+                break
+            time.sleep(0.02)
+        refused = c.delete("/api/v1/models/test-pause/download")
+        assert refused.status_code == 409  # not while it is downloading
+        c.post(f"/api/v1/jobs/{job['id']}/cancel")
+        assert wait_for(c, job["id"], TERMINAL)["state"] == "canceled"
+        info = model(c, "test-pause")
+        assert info["install_state"] == "not_installed"
+        assert 0 < info["downloaded_bytes"] < info["download_bytes"]
+
+        r = c.delete("/api/v1/models/test-pause/download")
+        assert r.status_code == 200 and r.json()["freed_bytes"] >= info["downloaded_bytes"]
+        assert model(c, "test-pause")["downloaded_bytes"] == 0
+        assert not list(isettings.paths.downloads.iterdir())
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_discard_refused_for_installed_engine(isettings, server):
+    c = client_with(isettings, make_engine("Kept", artifacts(server)))
+    try:
+        job = install(c, "test-kept").json()
+        assert wait_for(c, job["id"], TERMINAL)["state"] == "completed"
+        assert model(c, "test-kept")["downloaded_bytes"] == 0  # only for paused downloads
+        r = c.delete("/api/v1/models/test-kept/download")
+        assert r.status_code == 409
+        assert model_dir(isettings, "test-kept").exists()
+    finally:
+        c.__exit__(None, None, None)
+
+
 def test_restricted_licence_needs_confirmation(isettings, server):
     c = client_with(
         isettings, make_engine("Restricted", artifacts(server), license_class="restricted")

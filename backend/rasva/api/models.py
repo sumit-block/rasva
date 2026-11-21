@@ -64,6 +64,12 @@ def _describe(
         "download_bytes": sum(a.size_bytes for a in d.artifacts),
         "required_bytes": installer.required_bytes(engine) if d.requires_install else 0,
         "installed_bytes": record["installed_bytes"] if record else 0,
+        # A paused (canceled or interrupted) download: installing again resumes it.
+        "downloaded_bytes": (
+            installer.downloaded_bytes(engine)
+            if d.requires_install and install_state == "not_installed"
+            else 0
+        ),
         "install_state": install_state,
         "install_error": (record or {}).get("metadata", {}).get("error"),
         # The engine's software list changed since it was installed (ADR-0003).
@@ -186,6 +192,21 @@ def update_model(engine_id: str, state: State, conn: DB) -> dict[str, Any]:
     state.bus.publish({"type": "job", "job": job})
     state.orchestrator.notify()
     return job
+
+
+@router.delete("/models/{engine_id}/download")
+def discard_download(engine_id: str, state: State, conn: DB) -> dict[str, Any]:
+    """Delete a paused download of an engine that is not installed."""
+    engine = _engine(state, engine_id)
+    d = engine.descriptor
+    if _open_jobs(conn, d.id):
+        raise ApiError(409, "engine_in_use", "Pause or cancel the download first.")
+    installer = Installer(state.settings, conn, state.registry, state.storage)
+    try:
+        freed = installer.discard_download(engine)
+    except InstallError as exc:
+        raise ApiError(409, exc.code, exc.user_message) from exc
+    return {"freed_bytes": freed}
 
 
 @router.delete("/models/{engine_id}", status_code=202)

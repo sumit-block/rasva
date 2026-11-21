@@ -1,4 +1,4 @@
-import { Boxes, Download, RefreshCw, Trash2 } from "lucide-react";
+import { Boxes, Download, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,7 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
   const { upsert } = useJobs();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [confirming, setConfirming] = useState<"license" | "remove" | null>(null);
+  const [confirming, setConfirming] = useState<"license" | "remove" | "discard" | null>(null);
 
   const job = liveJob ?? model.active_job ?? undefined;
   const running = job && !TERMINAL_STATES.has(job.state);
@@ -39,6 +39,11 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
   const canInstall = model.install_state === "not_installed" || model.install_state === "failed";
   const updating = running && job?.task === "model.update";
   const canUpdate = installed && model.software_update_available && !running;
+  // A download stopped part-way (paused, or interrupted by a restart): Install resumes it.
+  const paused = !running && model.install_state === "not_installed" && model.downloaded_bytes > 0;
+  const downloading = running && job?.task === "model.install" && job.state === "downloading";
+  // Resuming does not ask about the licence again if it was accepted for this download.
+  const acceptedBefore = job?.task === "model.install" && job.inputs.license_accepted === true;
 
   const act = async (fn: () => Promise<Job>) => {
     setBusy(true);
@@ -46,6 +51,20 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
     setConfirming(null);
     try {
       upsert(await fn());
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const discard = async () => {
+    setBusy(true);
+    setError(undefined);
+    setConfirming(null);
+    try {
+      await api.discardDownload(model.id);
       onChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -132,6 +151,12 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
           <p className="mt-1 text-xs text-muted">{job.stage_detail ?? STATE_LABEL[job.state]}</p>
         </div>
       )}
+      {paused && (
+        <p className="mt-4 text-sm text-muted">
+          Paused: {formatBytes(model.downloaded_bytes)} of {formatBytes(model.download_bytes)} downloaded. Resume to
+          continue from there.
+        </p>
+      )}
       {job?.state === "failed" && job.error_message && !running && (
         <Notice tone="error" className="mt-3">{job.error_message}</Notice>
       )}
@@ -149,6 +174,18 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
           </div>
         </Notice>
       )}
+      {confirming === "discard" && (
+        <Notice className="mt-3">
+          <p>
+            Delete the {formatBytes(model.downloaded_bytes)} already downloaded for {model.display_name}? Installing later
+            starts the download again from the beginning.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <Button size="sm" variant="danger" onClick={() => void discard()}>Delete download</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(null)}>Keep it</Button>
+          </div>
+        </Notice>
+      )}
       {confirming === "remove" && (
         <Notice className="mt-3">
           <p>Remove {model.display_name}? Your projects and generated files are kept. You can reinstall later.</p>
@@ -161,8 +198,10 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
 
       <div className="mt-auto flex flex-wrap gap-2 pt-4">
         {running && job ? (
-          <Button size="sm" variant="secondary" disabled={busy || job.cancel_requested} onClick={() => act(() => api.cancelJob(job.id))}>
-            {job.cancel_requested ? "Stopping…" : "Cancel"}
+          <Button size="sm" variant="secondary" disabled={busy || job.cancel_requested} onClick={() => act(() => api.cancelJob(job.id))}
+            title={downloading ? "Stop for now; what is downloaded is kept and Resume continues from there." : undefined}>
+            {downloading ? <Pause aria-hidden /> : null}
+            {job.cancel_requested ? (downloading ? "Pausing…" : "Stopping…") : downloading ? "Pause" : "Cancel"}
           </Button>
         ) : (
           confirming === null && (
@@ -173,8 +212,14 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
               </Button>
             )}
             {canInstall && model.compatibility.compatible && (
-              <Button size="sm" disabled={busy} onClick={() => install()}>
-                <Download aria-hidden /> {model.install_state === "failed" ? "Resume install" : "Install"}
+              <Button size="sm" disabled={busy} onClick={() => install(paused && acceptedBefore)}>
+                {paused ? <Play aria-hidden /> : <Download aria-hidden />}{" "}
+                {paused ? "Resume download" : model.install_state === "failed" ? "Resume install" : "Install"}
+              </Button>
+            )}
+            {paused && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming("discard")}>
+                <Trash2 aria-hidden /> Discard download
               </Button>
             )}
             {(installed || model.install_state === "failed") && (

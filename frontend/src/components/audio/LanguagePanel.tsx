@@ -44,8 +44,8 @@ function SentenceReview({ s, onApply }: { s: TransliterationSentence; onApply: (
 }
 
 /** Language overview and Roman-to-Devanagari suggestions (PRD §10.1-10.2). Never changes text by itself. */
-export function LanguagePanel({ script, voiceLanguage, onChange }: {
-  script: string; voiceLanguage: "hi" | "en" | undefined; onChange: (next: string) => void;
+export function LanguagePanel({ script, voiceLanguage, perSentence = false, onChange }: {
+  script: string; voiceLanguage: "hi" | "en" | undefined; perSentence?: boolean; onChange: (next: string) => void;
 }) {
   const [analysis, setAnalysis] = useState<LanguageAnalysis>();
   const [review, setReview] = useState<TransliterationSentence[] | null>(null);
@@ -94,7 +94,12 @@ export function LanguagePanel({ script, voiceLanguage, onChange }: {
         )}
       </div>
       {analysis.summary.uncertain > 0 && (
-        <p className="mt-1 text-xs text-muted">{analysis.summary.uncertain} sentences are hard to tell apart; pick the voice that fits them.</p>
+        <p className="mt-1 text-xs text-muted">
+          {analysis.summary.uncertain} sentences are hard to tell apart;{" "}
+          {perSentence
+            ? "if one is read in the wrong language, set it with “Read as” in the sentence list below."
+            : "pick the voice that fits them."}
+        </p>
       )}
       {hinglish > 0 && voiceLanguage === "en" && (
         <p className="mt-1 text-xs text-muted">English voices read Roman Hinglish with English pronunciation.</p>

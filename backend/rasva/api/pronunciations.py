@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from rasva.api.deps import DB, State
 from rasva.api.errors import ApiError
-from rasva.audio.pronunciation import applicable, apply
+from rasva.audio.pronunciation import applicable, apply, apply_by_sentence
 from rasva.engines.registry import load_class
 from rasva.jobs import repository as repo
 from rasva.services import pronunciations as svc
@@ -45,7 +45,9 @@ class EntryUpdate(BaseModel):
 
 class CheckRequest(BaseModel):
     text: str = Field(max_length=20_000)
-    language: Literal["hi", "en"]
+    # The voice's language; leave out for engines that read each sentence in its
+    # own language (entries are then chosen per sentence).
+    language: Literal["hi", "en"] | None = None
     project_id: str | None = None
 
 
@@ -110,7 +112,8 @@ def preview(entry_id: str, body: PreviewRequest, state: State, conn: DB) -> dict
     language = svc.voice_language(engine.descriptor, body.voice_id)
     if language is None:
         raise ApiError(422, "invalid_voice", "Choose one of the engine's voices.")
-    if entry["language"] not in ("any", language):
+    per_sentence = svc.speaks_per_sentence(engine.descriptor)
+    if not per_sentence and entry["language"] not in ("any", language):
         raise ApiError(
             422, "language_mismatch", "This pronunciation is for the other language's voices."
         )
@@ -126,7 +129,20 @@ def preview(entry_id: str, body: PreviewRequest, state: State, conn: DB) -> dict
         for e in svc.list_entries(conn, entry["project_id"])
         if e["approved"] and e["id"] != entry_id
     ]
-    text, applied = apply(original, applicable([*others, svc.to_entry(entry)], language))
+    chosen = [*others, svc.to_entry(entry)]
+    if per_sentence:
+        # Engines that speak both choose entries by each sentence's language.
+        text, applied = apply_by_sentence(original, chosen)
+        if entry["language"] != "any" and all(a.entry_id != entry_id for a in applied):
+            raise ApiError(
+                422,
+                "language_mismatch",
+                "This pronunciation is for "
+                + ("English" if entry["language"] == "en" else "Hindi")
+                + " sentences, and this text is written in the other script.",
+            )
+    else:
+        text, applied = apply(original, applicable(chosen, language))
     try:
         inputs = load_class(engine.import_path)().validate_input(
             "audio.narrate", {"text": text, "voice_id": body.voice_id, "preview": True}

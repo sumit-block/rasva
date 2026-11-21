@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from rasva.audio.assemble import Assembler
-from rasva.audio.text import script_counts, segment
+from rasva.audio.text import reading_language, segment
 from rasva.engines import manifest as manifest_mod
 from rasva.engines.contract import (
     CompatibilityReport,
@@ -93,7 +93,13 @@ class ChatterboxEngine(Engine):
         modality="audio",
         tasks=["audio.narrate"],
         languages=["Hindi", "English"],
-        features=["voice_cloning", "preset_voices", "preview", "expressiveness"],
+        features=[
+            "voice_cloning",
+            "preset_voices",
+            "preview",
+            "expressiveness",
+            "language_per_sentence",
+        ],
         license="MIT (code and model weights)",
         license_class="permissive",
         license_notes=[
@@ -174,6 +180,13 @@ class ChatterboxEngine(Engine):
                 raise EngineInputError(f"{key} must be between {lo} and {hi}.")
             out[key] = round(value, 3)
         out["speed"] = 1.0  # Chatterbox has no speed control; pacing comes from cfg_weight
+        # The user's language for this text (a sentence marked English or Hindi);
+        # without it each sentence is read in the language of its script.
+        language = inputs.get("language")
+        if language not in (None, "", "en", "hi"):
+            raise EngineInputError("Language must be English or Hindi.")
+        if language:
+            out["language"] = language
         return out
 
     def load(self, ctx: RuntimeContext) -> None:
@@ -225,7 +238,7 @@ class ChatterboxEngine(Engine):
         for k, seg in enumerate(segments):
             ctx.raise_if_canceled()
             ctx.report_progress(k / len(segments), f"Sentence {k + 1} of {len(segments)}")
-            language = "hi" if script_counts(seg.text)["devanagari"] else "en"
+            language = inputs.get("language") or reading_language(seg.text)
             wav = self._model.generate(
                 seg.text, language_id=language, exaggeration=inputs["exaggeration"],
                 cfg_weight=inputs["cfg_weight"], temperature=inputs["temperature"],

@@ -12,14 +12,19 @@ Matching rules:
 - Latin forms are case-insensitive unless the entry says otherwise; Devanagari
   has no case.
 - Project entries override global entries for the same written form.
+- Entries are chosen by language: the voice's language for engines that read
+  everything in one language, or each sentence's language for engines that
+  speak both (:func:`apply_by_sentence`).
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
+
+from rasva.audio.text import reading_language, sentence_spans
 
 Language = Literal["hi", "en", "any"]
 
@@ -46,6 +51,7 @@ class Applied:
     spoken: str
     start: int  # offsets in the original text
     end: int
+    language: str | None = None  # the sentence's language, when chosen per sentence
 
 
 def _norm(s: str) -> str:
@@ -96,5 +102,35 @@ def apply(text: str, entries: list[Entry]) -> tuple[str, list[Applied]]:
         out.append(entry.spoken)
         applied.append(Applied(entry.id, m.group(0), entry.spoken, m.start(), m.end()))
         pos = m.end()
+    out.append(text[pos:])
+    return "".join(out), applied
+
+
+def apply_by_sentence(
+    text: str, entries: list[Entry], override: str | None = None
+) -> tuple[str, list[Applied]]:
+    """Like :func:`apply`, but entries are chosen by each sentence's language.
+
+    For engines that speak both English and Hindi: a Latin-script sentence gets
+    English (and "any") entries, a sentence with Devanagari gets Hindi ones,
+    using the same sentence boundaries and rule as the engine. ``override``
+    ("en" or "hi") is the user's choice for the whole text and wins over the
+    script rule. Offsets stay offsets into the original text.
+    """
+    text = _norm(text)
+    by_language: dict[str, list[Entry]] = {}
+    out: list[str] = []
+    applied: list[Applied] = []
+    pos = 0
+    for start, end in sentence_spans(text):
+        language = override or reading_language(text[start:end])
+        chosen = by_language.setdefault(language, applicable(entries, language))
+        spoken, got = apply(text[start:end], chosen)
+        out.append(text[pos:start])
+        out.append(spoken)
+        applied.extend(
+            replace(a, start=a.start + start, end=a.end + start, language=language) for a in got
+        )
+        pos = end
     out.append(text[pos:])
     return "".join(out), applied

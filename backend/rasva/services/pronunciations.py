@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from rasva.audio.pronunciation import Entry, applicable, apply
+from rasva.audio.pronunciation import Applied, Entry, applicable, apply, apply_by_sentence
 from rasva.config import Paths
 from rasva.db import dumps, loads, new_id, utcnow
 from rasva.engines.contract import EngineDescriptor
@@ -26,6 +26,11 @@ PRIORITY_NAMES: list[tuple[str, str]] = [
 ]
 
 PREVIEW_PROJECT = "Pronunciation previews"
+# Engines declaring this feature read each sentence in its own language (by
+# script, or the user's override) whatever the voice; others read everything in
+# the voice's language.
+PER_SENTENCE = "language_per_sentence"
+SPOKEN_LANGUAGES = ("en", "hi")
 EXTRA_KEYS = ("original_text", "pronunciations")
 
 
@@ -187,19 +192,36 @@ def voice_language(descriptor: EngineDescriptor, voice_id: Any) -> str | None:
     return voice.language if voice else None
 
 
+def speaks_per_sentence(descriptor: EngineDescriptor) -> bool:
+    return PER_SENTENCE in descriptor.features
+
+
+def _apply(
+    entries: list[Entry], text: str, language: str | None, override: str | None
+) -> tuple[str, list[Applied]]:
+    if language is None:  # per sentence
+        return apply_by_sentence(text, entries, override)
+    return apply(text, applicable(entries, language))
+
+
 def check(
     conn: sqlite3.Connection,
     project_id: str | None,
     text: str,
-    language: str,
+    language: str | None,
     extra_entry_ids: tuple[str, ...] = (),
+    override: str | None = None,
 ) -> dict[str, Any]:
-    """Show what the dictionary will change, and which unapproved entries match."""
+    """Show what the dictionary will change, and which unapproved entries match.
+
+    ``language`` None chooses entries per sentence (engines that speak both),
+    with ``override`` as the user's choice for the whole text.
+    """
     all_entries = list_entries(conn, project_id)
     approved = [to_entry(e) for e in all_entries if e["approved"] or e["id"] in extra_entry_ids]
-    normalized, applied = apply(text, applicable(approved, language))
+    normalized, applied = _apply(approved, text, language, override)
     pending = [to_entry(e) for e in all_entries if not e["approved"]]
-    _, unapproved = apply(text, applicable(pending, language))
+    _, unapproved = _apply(pending, text, language, override)
     return {
         "normalized": normalized,
         "applied": [a.__dict__ for a in applied],
@@ -217,17 +239,28 @@ def prepare_narration(
 
     Returns (inputs for the engine, extras to store with the job). The user's
     original text is kept in extras["original_text"]; the engine only ever sees
-    the transformed text.
+    the transformed text. Every substitution records the language it was chosen
+    for. Retries reuse the stored engine text (and ``language``), so they repeat
+    the same choices even if the dictionary changed since.
     """
     text = inputs.get("text")
     use = inputs.get("use_dictionary", True)
     engine_inputs = {k: v for k, v in inputs.items() if k not in (*EXTRA_KEYS, "use_dictionary")}
-    language = voice_language(descriptor, inputs.get("voice_id"))
-    if language is None and isinstance(inputs.get("reference"), dict):
-        language = inputs["reference"].get("language")
-    if not use or not isinstance(text, str) or language is None:
+    if not use or not isinstance(text, str):
         return engine_inputs, {}
-    result = check(conn, project_id, text, language)
+    if speaks_per_sentence(descriptor):
+        # Each sentence's language, not the voice's: a voice cloned from a Hindi
+        # recording still reads English sentences in English.
+        language = None
+        override = inputs.get("language") if inputs.get("language") in SPOKEN_LANGUAGES else None
+    else:
+        override = None
+        language = voice_language(descriptor, inputs.get("voice_id"))
+        if language is None and isinstance(inputs.get("reference"), dict):
+            language = inputs["reference"].get("language")
+        if language is None:
+            return engine_inputs, {}
+    result = check(conn, project_id, text, language, override=override)
     if not result["applied"]:
         return engine_inputs, {}
     engine_inputs["text"] = result["normalized"]

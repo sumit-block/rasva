@@ -9,6 +9,9 @@ affect only that segment (NFR-04). Takes are never overwritten:
   review ("needs_review") until the user chooses new or keeps old.
 - Editing the script re-segments it; segments whose text is unchanged keep
   their takes, so only edited sentences need generating again.
+- A segment may carry the user's language (English or Hindi) when detection is
+  wrong. Engines that speak both read the whole segment in it, and the
+  pronunciation dictionary uses it; it survives edits elsewhere in the script.
 
 Statuses are derived from the takes' job states when the chapter is read, so
 there is no second source of truth to drift from the job queue.
@@ -21,7 +24,7 @@ from collections import defaultdict
 from typing import Any
 
 from rasva.audio.language import classify
-from rasva.audio.text import group, segment
+from rasva.audio.text import group, reading_language, segment
 from rasva.config import Paths
 from rasva.db import dumps, loads, new_id, transaction, utcnow
 from rasva.engines.contract import EngineError
@@ -39,6 +42,7 @@ SETTING_KEYS = ("engine_id", "voice_id", "voice_profile_id", "speed", "use_dicti
 GENERATE_SCOPES = ("needed", "failed", "all")
 OPEN_STATES = {JobState.QUEUED.value, JobState.DRAFT.value, *(s.value for s in ACTIVE)}
 BAD_STATES = {JobState.FAILED.value, JobState.INTERRUPTED.value}
+LANGUAGES = ("en", "hi")
 
 
 class ChapterError(ValueError):
@@ -203,7 +207,8 @@ def _resegment(conn: sqlite3.Connection, chapter_id: str, script: str) -> None:
     """
     fresh = group(segment(script)) if script.strip() else []
     old = conn.execute(
-        "SELECT id, text FROM segments WHERE chapter_id = ? ORDER BY position", (chapter_id,)
+        "SELECT id, text, language_override FROM segments WHERE chapter_id = ? ORDER BY position",
+        (chapter_id,),
     ).fetchall()
     by_text: dict[str, list[str]] = defaultdict(list)
     for row in old:
@@ -214,6 +219,14 @@ def _resegment(conn: sqlite3.Connection, chapter_id: str, script: str) -> None:
         ids = by_text.get(seg.text)
         plan.append((ids.pop(0) if ids else None, seg))
     keep = {sid for sid, _ in plan if sid}
+    # Sentences are grouped into segments, so editing one sentence replaces its
+    # whole segment. A replaced segment's language choice carries over to new
+    # segments that still contain one of its unchanged sentences.
+    carried: dict[str, str] = {}
+    for row in old:
+        if row["id"] not in keep and row["language_override"]:
+            for sentence in _sentences(row["text"]):
+                carried.setdefault(sentence, row["language_override"])
     for row in old:
         if row["id"] not in keep:
             conn.execute("DELETE FROM segments WHERE id = ?", (row["id"],))
@@ -227,12 +240,39 @@ def _resegment(conn: sqlite3.Connection, chapter_id: str, script: str) -> None:
                 (position, seg.paragraph, seg.pause_after_s, sid),
             )
         else:
+            language = next((carried[t] for t in _sentences(seg.text) if t in carried), None)
             conn.execute(
                 "INSERT INTO segments(id, chapter_id, position, paragraph, text, pause_after_s,"
-                " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " language_override, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (new_id("seg"), chapter_id, position, seg.paragraph, seg.text,
-                 seg.pause_after_s, now),
+                 seg.pause_after_s, language, now),
             )  # fmt: skip
+
+
+def _sentences(text: str) -> list[str]:
+    return [s.text for s in segment(text)]
+
+
+def set_language(conn: sqlite3.Connection, segment_id: str, language: str | None) -> str:
+    """Mark a segment English or Hindi (None = automatic). Returns its chapter id."""
+    if language is not None and language not in LANGUAGES:
+        raise ChapterError("Choose English, Hindi or automatic.")
+    row = conn.execute("SELECT chapter_id FROM segments WHERE id = ?", (segment_id,)).fetchone()
+    if row is None:
+        raise ChapterNotFound(segment_id)
+    conn.execute("UPDATE segments SET language_override = ? WHERE id = ?", (language, segment_id))
+    return row["chapter_id"]
+
+
+def reads_per_sentence(registry: EngineRegistry, chapter: dict[str, Any]) -> bool:
+    """Does the chapter's engine read each sentence in its own language?"""
+    engine = registry.get(str(chapter["settings"].get("engine_id") or ""))
+    return engine is not None and pronunciation_svc.speaks_per_sentence(engine.descriptor)
+
+
+def _language_used(per_sentence: bool, seg: dict[str, Any]) -> str | None:
+    """The override the engine actually receives (none for one-language engines)."""
+    return seg["language_override"] if per_sentence else None
 
 
 def delete(conn: sqlite3.Connection, chapter_id: str) -> None:
@@ -281,7 +321,9 @@ def _segments_with_takes(conn: sqlite3.Connection, chapter_id: str) -> list[dict
     return segments
 
 
-def _derive(conn: sqlite3.Connection, chapter: dict[str, Any], seg: dict[str, Any]) -> str:
+def _derive(
+    conn: sqlite3.Connection, chapter: dict[str, Any], seg: dict[str, Any], per_sentence: bool
+) -> str:
     takes = seg["takes"]
     by_id = {t["id"]: t for t in takes}
     current = by_id.get(seg["current_take_id"]) if seg["current_take_id"] else None
@@ -313,19 +355,26 @@ def _derive(conn: sqlite3.Connection, chapter: dict[str, Any], seg: dict[str, An
     if (
         not _same_settings(current["settings"], chapter["settings"])
         or current["text"] != seg["text"]
+        # Takes made before language choices existed have no key: same as none.
+        or current["settings"].get("language_override") != _language_used(per_sentence, seg)
     ):
         return "outdated"
     return "ready"
 
 
-def detail(conn: sqlite3.Connection, chapter_id: str) -> dict[str, Any]:
+def detail(conn: sqlite3.Connection, chapter_id: str, registry: EngineRegistry) -> dict[str, Any]:
     chapter = _chapter_row(conn, chapter_id)
+    per_sentence = reads_per_sentence(registry, chapter)
     segments = _segments_with_takes(conn, chapter_id)
     counts: dict[str, int] = defaultdict(int)
     duration = 0.0
     for seg in segments:
-        seg["status"] = _derive(conn, chapter, seg)
+        seg["status"] = _derive(conn, chapter, seg, per_sentence)
         seg["language"], seg["language_confidence"] = classify(seg["text"])
+        # What an engine that speaks both will read it as: the user's choice, or
+        # each sentence's script ("mixed" when its sentences differ).
+        read = {reading_language(t) for t in _sentences(seg["text"])}
+        seg["reads_as"] = seg["language_override"] or (read.pop() if len(read) == 1 else "mixed")
         counts[seg["status"]] += 1
         if seg["current"] and seg["current"]["duration_s"]:
             duration += float(seg["current"]["duration_s"]) + seg["pause_after_s"]
@@ -347,6 +396,7 @@ def detail(conn: sqlite3.Connection, chapter_id: str) -> dict[str, Any]:
     ]
     return {
         **chapter,
+        "language_per_sentence": per_sentence,
         "segments": segments,
         "summary": {
             "segments": len(segments),
@@ -381,6 +431,7 @@ def _queue_take(
 ) -> str:
     settings = chapter["settings"]
     engine = _engine(conn, registry, settings["engine_id"])
+    language = _language_used(pronunciation_svc.speaks_per_sentence(engine.descriptor), seg)
     raw = {
         "text": seg["text"],
         "voice_id": settings["voice_id"],
@@ -389,6 +440,8 @@ def _queue_take(
         "preview": False,
         "preset": settings.get("preset"),
     }
+    if language:
+        raw["language"] = language
     raw = apply_preset(engine.descriptor, raw)
     if settings.get("voice_profile_id"):
         if paths is None:
@@ -423,7 +476,14 @@ def _queue_take(
     conn.execute(
         "INSERT INTO takes(id, segment_id, job_id, settings, text, created_at)"
         " VALUES (?, ?, ?, ?, ?, ?)",
-        (new_id("tak"), seg["id"], job_id, dumps(settings), seg["text"], utcnow()),
+        (
+            new_id("tak"),
+            seg["id"],
+            job_id,
+            dumps({**settings, "language_override": language}),
+            seg["text"],
+            utcnow(),
+        ),
     )
     return job_id
 
@@ -437,7 +497,7 @@ def generate(
 ) -> list[str]:
     if scope not in GENERATE_SCOPES:
         raise ChapterError(f"Scope must be one of {GENERATE_SCOPES}.")
-    info = detail(conn, chapter_id)
+    info = detail(conn, chapter_id, registry)
     wanted = {
         "needed": {"pending", "failed", "outdated"},
         "failed": {"failed"},
@@ -460,7 +520,7 @@ def regenerate_segment(
     row = conn.execute("SELECT chapter_id FROM segments WHERE id = ?", (segment_id,)).fetchone()
     if row is None:
         raise ChapterNotFound(segment_id)
-    info = detail(conn, row["chapter_id"])
+    info = detail(conn, row["chapter_id"], registry)
     seg = next(s for s in info["segments"] if s["id"] == segment_id)
     if seg["status"] == "generating":
         raise ChapterError("This sentence is already being generated.")

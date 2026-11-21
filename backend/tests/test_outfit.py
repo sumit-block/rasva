@@ -316,3 +316,21 @@ def test_description_stays_out_of_logs(client, project, caplog):
     )  # fmt: skip
     wait_for(client, r.json()["id"], {"completed", "failed"})
     assert "zebra-striped" not in caplog.text
+
+
+def test_outfit_jobs_are_image_versions(client, project):
+    """I3 + I4: outfit results join the image's versions, and "again" adds to them."""
+    person = upload(client, project["id"])
+    garment = upload(client, project["id"], "g.png", "garment")
+    body = dict(engine_id=EDITOR_ID, person_asset_id=person["id"], garment_asset_id=garment["id"])
+    first = change(client, project["id"], seed=1, **body).json()
+    assert wait_for(client, first["id"], {"completed", "failed"})["state"] == "completed"
+    groups = client.get(f"/api/v1/projects/{project['id']}/image-groups").json()
+    assert [[v["id"] for v in g["versions"]] for g in groups] == [[first["id"]]]
+
+    again = client.post(f"/api/v1/jobs/{first['id']}/again", json={"seed": "same"})
+    assert again.status_code == 201, again.text
+    assert again.json()["inputs"]["workflow"]["name"] == "outfit"
+    wait_for(client, again.json()["id"], {"completed", "failed"})
+    groups = client.get(f"/api/v1/projects/{project['id']}/image-groups").json()
+    assert len(groups) == 1 and len(groups[0]["versions"]) == 2

@@ -15,6 +15,19 @@ import { ExportPanel } from "./ExportPanel";
 const usable = (j: Job) => j.state === "completed" && j.outputs.length > 0;
 const output = (j: Job) => j.outputs[0] ?? "";
 
+/** Pose (I2) and outfit (I3) jobs keep Rasva's own instruction in `prompt`, not the user's words. */
+const builtInstruction = (j: Job) => typeof j.inputs.pose_source === "string" || (j.inputs.workflow as { name?: string } | undefined)?.name === "outfit";
+
+function titleOf(j: Job): string {
+  if (typeof j.inputs.pose_source === "string") {
+    const extra = String(j.inputs.user_prompt ?? "").trim();
+    return extra ? `New pose: ${extra}` : "New pose";
+  }
+  const wf = j.inputs.workflow as { name?: string; garment_source?: string } | undefined;
+  if (wf?.name === "outfit") return wf.garment_source === "photo" ? "Change outfit (from a garment photo)" : "Change outfit (described)";
+  return String(j.inputs.prompt ?? "Image");
+}
+
 /**
  * Image results grouped as versions (PRD phase I4). Running jobs show as job
  * rows with progress; finished ones join their image's version strip.
@@ -103,8 +116,8 @@ function ImageGroupCard({ group, onChange }: { group: ImageGroup; onChange: (g: 
   return (
     <li className="rounded-[var(--radius-card)] border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="min-w-0 truncate text-sm font-medium" title={String(selected.inputs.prompt ?? "")}>
-          {String(selected.inputs.prompt ?? "Image")}
+        <h3 className="min-w-0 truncate text-sm font-medium" title={titleOf(selected)}>
+          {titleOf(selected)}
         </h3>
         <span className="text-xs text-muted">Version {index} of {versions.length}</span>
       </div>
@@ -115,7 +128,11 @@ function ImageGroupCard({ group, onChange }: { group: ImageGroup; onChange: (g: 
             className="aspect-square w-full max-w-md rounded-lg border border-border bg-surface-2 object-contain" />
         ) : (
           <div className="flex aspect-square w-full max-w-md items-center justify-center rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted">
-            {selected.state === "completed" ? "This version's picture was removed in cleanup." : selected.error_message ?? "This version didn't finish."}
+            {selected.state === "completed"
+              ? "This version's picture was removed in cleanup."
+              : !TERMINAL_STATES.has(selected.state)
+                ? selected.state === "queued" ? "Waiting its turn…" : (selected.stage_detail ?? "Making this version…")
+                : selected.error_message ?? "This version didn't finish."}
           </div>
         )}
       </div>
@@ -153,9 +170,11 @@ function ImageGroupCard({ group, onChange }: { group: ImageGroup; onChange: (g: 
         <Button size="sm" variant="secondary" disabled={busy} onClick={() => void again("same")}>
           <RotateCcw aria-hidden /> Try again, same seed
         </Button>
-        <Button size="sm" variant="ghost" aria-expanded={editing} onClick={() => { setPrompt(String(selected.inputs.prompt ?? "")); setEditing((e) => !e); }}>
-          Edit description
-        </Button>
+        {!builtInstruction(selected) && (
+          <Button size="sm" variant="ghost" aria-expanded={editing} onClick={() => { setPrompt(String(selected.inputs.prompt ?? "")); setEditing((e) => !e); }}>
+            Edit description
+          </Button>
+        )}
         <Button size="sm" variant="ghost" aria-expanded={panel === "compare"} disabled={!asset}
           onClick={() => setPanel((p) => (p === "compare" ? "none" : "compare"))}>
           <Columns2 aria-hidden /> Compare

@@ -21,6 +21,7 @@ from rasva.api.jobs import _resolve_references, _validate
 from rasva.engines.registry import RegisteredEngine
 from rasva.jobs import repository as repo
 from rasva.services import assets as asset_svc
+from rasva.services import images as image_svc
 from rasva.services import outfit as svc
 from rasva.services import projects as project_svc
 from rasva.services.installer import ModelStore
@@ -100,10 +101,12 @@ def change_outfit(project_id: str, body: OutfitCreate, state: State, conn: DB) -
             raise ApiError(422, "invalid_preset", str(exc)) from exc
         extras["preset"] = body.preset
     raw = _resolve_references(state, conn, project_id, raw)
+    extras.update(image_svc.engine_extras(conn, engine.descriptor))  # low-memory mode (I4)
     inputs = {**_validate(state, conn, engine.descriptor.id, TASK, raw), **extras}
     job = repo.create(
         conn, project_id=project_id, task=TASK, engine_id=engine.descriptor.id, inputs=inputs
     )
+    image_svc.assign(conn, job)  # versions of the same photos group together (I4)
     state.bus.publish({"type": "job", "job": job})
     state.orchestrator.notify()
     return job

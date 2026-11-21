@@ -66,6 +66,10 @@ def update_group(group_id: str, body: FavouriteBody, conn: DB) -> dict[str, Any]
         raise _version_error(exc) from exc
 
 
+# I3 outfit: which garment source was used (jobs.retry_job keeps it too).
+KEPT_KEYS = ("workflow",)
+
+
 @router.post("/jobs/{job_id}/again", status_code=201)
 def make_version(job_id: str, body: AgainBody, state: State, conn: DB) -> dict[str, Any]:
     """A new version of an image: same request, new or same seed, optionally edited text."""
@@ -77,14 +81,16 @@ def make_version(job_id: str, body: AgainBody, state: State, conn: DB) -> dict[s
     engine = state.registry.get(old["engine_id"])
     if engine is None:
         raise ApiError(422, "engine_unavailable", "That engine is not available.")
-    raw = {k: v for k, v in old["inputs"].items() if k not in svc.ADDED_KEYS}
+    # Records the engine does not validate travel with the version, as on retry.
+    kept = {k: old["inputs"][k] for k in KEPT_KEYS if k in old["inputs"]}
+    raw = {k: v for k, v in old["inputs"].items() if k not in svc.ADDED_KEYS and k not in KEPT_KEYS}
     if body.seed == "new":
         raw.pop("seed", None)  # validate_input picks and stores a fresh one
     if body.prompt is not None:
         raw["prompt"] = body.prompt
     if body.negative_prompt is not None:
         raw["negative_prompt"] = body.negative_prompt
-    extras: dict[str, Any] = {}
+    extras: dict[str, Any] = dict(kept)
     if raw.get("preset"):
         try:
             extras["preset"] = raw["preset"]

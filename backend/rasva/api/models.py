@@ -64,10 +64,11 @@ def _describe(
         "download_bytes": sum(a.size_bytes for a in d.artifacts),
         "required_bytes": installer.required_bytes(engine) if d.requires_install else 0,
         "installed_bytes": record["installed_bytes"] if record else 0,
-        # A paused (canceled or interrupted) download: installing again resumes it.
+        # Bytes already downloaded for an install that did not finish (paused, or
+        # interrupted by a restart, which leaves it "failed"); installing resumes it.
         "downloaded_bytes": (
             installer.downloaded_bytes(engine)
-            if d.requires_install and install_state == "not_installed"
+            if d.requires_install and install_state in ("not_installed", "failed")
             else 0
         ),
         "install_state": install_state,

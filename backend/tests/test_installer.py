@@ -334,6 +334,17 @@ def test_pause_shows_downloaded_bytes_and_can_be_discarded(isettings, server):
         assert info["install_state"] == "not_installed"
         assert 0 < info["downloaded_bytes"] < info["download_bytes"]
 
+        # A restart mid-download leaves the install "failed"; its parts still count.
+        from rasva.db import connect
+        from rasva.services.installer import ModelStore
+
+        conn = connect(isettings.paths.db_file)
+        d = c.app.state.rasva.registry.get("test-pause").descriptor
+        ModelStore(conn).set_state(d, "failed")
+        assert model(c, "test-pause")["downloaded_bytes"] == info["downloaded_bytes"]
+        assert c.delete("/api/v1/models/test-pause/download").status_code == 409  # Remove instead
+        ModelStore(conn).delete(d.id)
+
         r = c.delete("/api/v1/models/test-pause/download")
         assert r.status_code == 200 and r.json()["freed_bytes"] >= info["downloaded_bytes"]
         assert model(c, "test-pause")["downloaded_bytes"] == 0

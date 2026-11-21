@@ -40,7 +40,8 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
   const updating = running && job?.task === "model.update";
   const canUpdate = installed && model.software_update_available && !running;
   // A download stopped part-way (paused, or interrupted by a restart): Install resumes it.
-  const paused = !running && model.install_state === "not_installed" && model.downloaded_bytes > 0;
+  // (A restart mid-download leaves the install "failed"; its parts resume the same way.)
+  const paused = !running && canInstall && model.downloaded_bytes > 0 && model.downloaded_bytes < model.download_bytes;
   const downloading = running && job?.task === "model.install" && job.state === "downloading";
   // Resuming does not ask about the licence again if it was accepted for this download.
   const acceptedBefore = job?.task === "model.install" && job.inputs.license_accepted === true;
@@ -217,7 +218,7 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
                 {paused ? "Resume download" : model.install_state === "failed" ? "Resume install" : "Install"}
               </Button>
             )}
-            {paused && (
+            {paused && model.install_state === "not_installed" && (
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming("discard")}>
                 <Trash2 aria-hidden /> Discard download
               </Button>

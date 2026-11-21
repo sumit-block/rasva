@@ -147,6 +147,8 @@ export type AppSettings = {
   "memory.safety_margin_bytes": number;
   "memory.when_short": "start" | "wait";
   "image.low_memory": boolean;
+  "image.engine.generate": string;
+  "image.engine.edit": string;
 };
 
 export interface MemoryWait {

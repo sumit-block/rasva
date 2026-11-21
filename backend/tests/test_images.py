@@ -348,3 +348,16 @@ def test_png_export_strips_existing_metadata_and_refuses_non_png(c, pid):
     assert c.get(f"{API}/assets/{r.json()['id']}/export").status_code == 422
     ref = upload_reference(c, pid)
     assert c.get(f"{API}/assets/{ref}/provenance").json()["details"] == {}
+
+
+def test_image_model_choice_is_remembered(client):
+    """Image Studio asks for a model once per mode and remembers it."""
+    settings = client.get("/api/v1/settings").json()
+    assert settings["image.engine.generate"] == "" and settings["image.engine.edit"] == ""
+    r = client.patch("/api/v1/settings", json={"image.engine.edit": "flux2-klein-4b"})
+    assert r.status_code == 200, r.text
+    assert client.get("/api/v1/settings").json()["image.engine.edit"] == "flux2-klein-4b"
+    bad = client.patch("/api/v1/settings", json={"image.engine.generate": 5})
+    assert bad.status_code in (400, 422)
+    too_long = client.patch("/api/v1/settings", json={"image.engine.generate": "x" * 65})
+    assert too_long.status_code in (400, 422)

@@ -23,6 +23,9 @@ DEFAULTS: dict[str, Any] = {
     "memory.when_short": "start",
     # Ask image engines that support it to use less memory (services/images.py).
     "image.low_memory": False,
+    # The model the owner chose in Image Studio, per mode; "" until chosen.
+    "image.engine.generate": "",
+    "image.engine.edit": "",
 }
 
 # Validators keep obviously unsafe values out (e.g. a 0-byte OS reserve).
@@ -50,6 +53,9 @@ def validate(key: str, value: Any) -> Any:
     if key in READ_ONLY:
         raise SettingError(f"{key!r} cannot be changed here")
     default = DEFAULTS[key]
+    free_text = isinstance(default, str) and key not in _ENUMS
+    if free_text and (not isinstance(value, str) or len(value) > 64):
+        raise SettingError(f"{key!r} must be text of at most 64 characters")
     if isinstance(default, bool):
         if not isinstance(value, bool):
             raise SettingError(f"{key!r} must be true or false")

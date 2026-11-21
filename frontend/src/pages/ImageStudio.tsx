@@ -8,7 +8,7 @@ import { PoseStudio } from "@/components/image/PoseStudio";
 import { ReferencePicker } from "@/components/image/ReferencePicker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { EmptyState, Notice } from "@/components/ui/notice";
 import { useAsync } from "@/hooks/useAsync";
 import { useJobs } from "@/hooks/useJobs";
@@ -30,8 +30,20 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
   const canEdit = engines.some((e) => e.tasks.includes(TASK.edit));
   const [mode, setMode] = useState<Mode>(canEdit && params.get("mode") === "edit" ? "edit" : "create");
   const forMode = useMemo(() => engines.filter((e) => e.tasks.includes(TASK[mode])), [engines, mode]);
-  const [engineId, setEngineId] = useState(forMode[0]?.id ?? "");
-  const engine = forMode.find((e) => e.id === engineId) ?? forMode[0];
+  // The model is the owner's choice: none is picked until they choose one, and
+  // the choice is remembered on the Mac per mode (settings image.engine.*).
+  const [chosen, setChosen] = useState<Record<Mode, string>>({ create: "", edit: "" });
+  useEffect(() => {
+    api.settings().then(
+      (s) => setChosen({ create: s["image.engine.generate"] ?? "", edit: s["image.engine.edit"] ?? "" }),
+      () => undefined,
+    );
+  }, []);
+  const engine = forMode.find((e) => e.id === chosen[mode]);
+  const chooseEngine = (id: string) => {
+    setChosen((c) => ({ ...c, [mode]: id }));
+    api.updateSettings({ [mode === "edit" ? "image.engine.edit" : "image.engine.generate"]: id }).catch((e: Error) => setError(e.message));
+  };
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
   const [preset, setPreset] = useState("");
@@ -71,8 +83,6 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
 
   const switchMode = (m: Mode) => {
     setMode(m);
-    const next = engines.filter((e) => e.tasks.includes(TASK[m]));
-    if (!next.some((e) => e.id === engineId)) setEngineId(next[0]?.id ?? "");
     setParams({ ...(projectId ? { project: projectId } : {}), ...(m === "edit" ? { mode: m } : {}) });
   };
 
@@ -191,23 +201,28 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
             <Button disabled={blocked} onClick={() => void generate()}>
               {mode === "edit" ? <Wand2 aria-hidden /> : <Sparkles aria-hidden />} {mode === "edit" ? "Edit photo" : "Generate image"}
             </Button>
-            {needsPhoto && <span className="ml-3 text-xs text-muted">Add the original photo.</span>}
+            {!engine && <span className="ml-3 text-xs text-muted">Choose a model.</span>}
+            {engine && needsPhoto && <span className="ml-3 text-xs text-muted">Add the original photo.</span>}
           </div>
         </Card>
 
         <Card>
-          <CardTitle>Quality</CardTitle>
-          {engine && <CardDescription>{engine.display_name}: {engine.summary}</CardDescription>}
-          {advanced && forMode.length > 1 && (
-            <label className="mt-4 block text-sm">
-              <span className="mb-1 block font-medium">Engine</span>
-              <select value={engine?.id ?? ""} onChange={(e) => setEngineId(e.target.value)} className="min-h-11 w-full rounded-lg border border-border bg-bg px-3">
-                {forMode.map((e) => <option key={e.id} value={e.id}>{e.display_name}</option>)}
-              </select>
-            </label>
-          )}
+          <CardTitle>Model and quality</CardTitle>
+          <div role="radiogroup" aria-labelledby="image-model-label" className="mt-3 grid gap-2">
+            <p id="image-model-label" className="text-sm font-medium">
+              Model {!engine && <span className="font-normal text-muted">· choose one to start; Rasva remembers it</span>}
+            </p>
+            {forMode.map((e) => (
+              <button key={e.id} role="radio" aria-checked={engine?.id === e.id} onClick={() => chooseEngine(e.id)}
+                className={cn("min-h-11 rounded-lg border px-3 py-2 text-left", engine?.id === e.id ? "border-accent bg-accent/10" : "border-border")}>
+                <span className="block text-sm font-medium">{e.display_name}</span>
+                <span className="block text-xs text-muted">{e.summary}</span>
+              </button>
+            ))}
+          </div>
+          {engine && engine.presets.length > 0 && <p className="mt-4 text-sm font-medium">Quality</p>}
           {engine && (
-            <div role="radiogroup" aria-label="Quality" className="mt-4 grid gap-2">
+            <div role="radiogroup" aria-label="Quality" className="mt-2 grid gap-2">
               {[...engine.presets, ...(advanced && knobs ? [{ id: "", label: "Custom", description: "Use the settings below." }] : [])].map((p) => (
                 <button key={p.id || "custom"} role="radio" aria-checked={preset === p.id} onClick={() => setPreset(p.id)}
                   className={cn("min-h-11 rounded-lg border px-3 py-2 text-left", preset === p.id ? "border-accent bg-accent/10" : "border-border")}>

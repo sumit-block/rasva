@@ -1,11 +1,12 @@
-# Pose control (phase I2: same person, new pose): DRAFT
+# Pose control (phase I2: same person, new pose)
 
-Status: **draft, not installed, nothing measured.** Written 2026-11-20 and
-updated the same day for the owner's decision to run Klein on mflux 0.24.0
-(Apple MLX, 4-bit, the `flux2-klein-4b` engine) instead of diffusers. Researched from
-model cards, repositories and package indexes, with no weights downloaded. The
-code is built and tested with fake runtimes only. The owner must confirm the
-licences below before anything is pinned, locked or installed.
+Status: **installed and run on the M2 (2026-11-21).** The owner accepted the
+DWPose (Apache-2.0) and onnxruntime (MIT) licences on 2026-11-21. The two ONNX
+files are pinned by SHA-256 and the environment is hash-locked (11 wheels, no
+torch). Results on synthetic test people are under
+[Measurements on the M2](#measurements-on-the-m2-2026-11-21); tests on real photos
+of people are still to do. Klein runs on mflux 0.24.0 (Apple MLX, 4-bit, the
+`flux2-klein-4b` engine).
 
 ## Recommendation
 
@@ -106,10 +107,40 @@ body or clothes.
 - The pose finder is gated with licence class `unknown`. It shows as
   incompatible, with the exact next steps, until it is pinned and locked.
 
-## For the main session: install and measure
+## Measurements on the M2 (2026-11-21)
 
-1. **Owner confirms licences** (list below). Then reclassify `dwpose`'s
-   `license_class` if wanted. It is `unknown` now, so the installer asks.
+M2, 16 GB, through the app (install job and `/jobs`). FLUX.2 Klein 4B 4-bit on
+mflux 0.24.0, 4 steps. **The test people were synthetic:** FLUX.2 Klein made a
+fictional woman (person photo) and a fictional man walking and waving (pose
+photo) in the same project. No photos of real people were used; that test is
+still the owner's.
+
+| Measure | Result |
+| --- | --- |
+| Pose finder install | 351 MB download (2 ONNX files, SHA-256 checked) in 76 s; environment 9 s; 485 MB installed |
+| Pose finder run | Load 1.0 s; read the pose in 1.4 s on CPU; 1 person, all 18 keypoints; peak RSS 0.70 GB |
+| Pose finder accuracy, by eye | The figure matched the photo: raised right arm, bent left arm, stride. So the RGB channel order (`INPUT_ORDER`) is right for these weights |
+| Pose change, extracted figure (balanced) | Same woman, face, hair and clothes; raised arm and walking stride followed. 205 s at 576 × 768 |
+| Pose change, built-in "hands on hips" (balanced) | Same woman and clothes; hands at the hips but in front, elbows not out: pose only partly followed. 170 s at 512 × 768 |
+| Same, "Follow the pose closely" | Hands on hips with elbows out; still recognisably the same woman. 155 s |
+| Pose change, **original pose photo** (balanced) | **Failed:** right pose, but the face and head were the pose photo's man, wearing the woman's clothes, despite "do not copy the face". 157 s |
+| MLX peak per job | 6.2 GB (576 × 768) to 8.4 GB (512 × 768 with the longer instruction); worker RSS 2.2 GB |
+
+Decisions from this run:
+
+- Pose changes **always send the stick figure**. The "send the pose photo
+  instead" option was removed from Image Studio: Klein copies the person in
+  any photo it is given. The engine still accepts `pose_source: "photo"` for
+  experiments.
+- The refcontrol LoRA is not needed for now: Klein followed both figures, and
+  "Follow the pose closely" fixed the one loose result.
+- The default identity setting stays "Balanced". One sample per setting is not
+  enough to change it.
+
+## Install and measure (steps 1–5 done 2026-11-21)
+
+1. **Owner confirms licences** (list below). Done 2026-11-21; `dwpose` is now
+   `permissive`.
 2. Lock the pose finder (from `backend/rasva/engines/pose/`):
    `MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements.in --generate-hashes --only-binary :all: --python-version 3.12 --python-platform aarch64-apple-darwin --no-header --no-annotate -o requirements.lock`.
    A dry run on 2026-11-20 resolved to 11 packages. Without the deployment
@@ -135,7 +166,7 @@ body or clothes.
      Weigh that before shipping it.
 8. Record the measurements in a section here, the way `sd15.md` does.
 
-## Licences to confirm
+## Licences (accepted by the owner 2026-11-21)
 
 | Component | Licence | Notes |
 | --- | --- | --- |
@@ -151,16 +182,11 @@ body or clothes.
 
 ## Not verified
 
-- Klein's (4-bit, mflux) memory use and speed on the M2 with two or three
-  references.
-- Whether Klein follows a stick figure without the LoRA, and how well with it.
+- Pose changes on photos of real people, and with three references (background).
+- How well the LoRA would do (not needed so far).
 - Whether the refcontrol LoRA loads in mflux and works on the distilled model.
-- DWPose's channel order and thresholds against real weights. The decoding
-  was written to follow DWPose's ONNX code and compared with rtmlib 0.0.16
-  (grid decode, padding, normalisation and SimCC rescaling agree). It has only
-  run on synthetic tensors. Channel order is the open question: the ControlNet
-  annotator passes RGB, rtmlib passes BGR. `INPUT_ORDER` in `pose/__init__.py`
-  is the one switch.
+- DWPose thresholds on hard photos (several people, partial bodies). Channel
+  order is checked: RGB gave a correct figure on the M2.
 - Core ML execution-provider coverage for YOLOX and DWPose.
 - The training-data licences behind DWPose and the LoRA.
 - The SD 1.5 fallback's memory use with ControlNet and IP-Adapter added.

@@ -100,14 +100,20 @@ Before an engine loads cold, Rasva compares the memory macOS can hand out now
 (psutil's `available`: free plus inactive memory) with the engine's measured
 peak (`approx_peak_memory_bytes`) plus a safety margin. If there is not enough,
 it first unloads another engine that is sitting idle and checks again. If there
-is still not enough, the job stays **queued** with the detail "Waiting for
-memory: … Close other apps or wait for them to finish; this starts on its own",
-and Rasva re-checks every 5 seconds. You can cancel a waiting job as usual.
-Waiting was chosen over failing the job: memory usually frees on its own when
-another app finishes, and a queued job needs no new state, survives a restart
-and starts without a Retry. A job that could never fit (its engine's peak plus
-the margin is more than the Mac's total memory) fails at once with a plain
-message and Retry.
+is still not enough, what happens depends on `memory.when_short`:
+
+- **`start` (default, owner decision 2026-11-21):** the job starts anyway. While
+  the engine loads it says "Memory is short (… free, about … wanted), so this
+  may be slow", and the job's metrics record `memory_short`. On the 16 GB M2
+  macOS usually reports about 6 GB available with a browser and other apps
+  open; FLUX.2 Klein still finished there, slower, while macOS compressed and
+  swapped.
+- **`wait`:** the job stays **queued** with the detail "Waiting for memory: …
+  Close other apps or wait for them to finish; this starts on its own", and
+  Rasva re-checks every 5 seconds. You can cancel a waiting job as usual.
+
+Either way, a job that could never fit (its engine's peak plus the margin is
+more than the Mac's total memory) fails at once with a plain message and Retry.
 
 Jobs that load nothing new skip the check: a job for the engine already
 loaded, model installs and removals, and light built-in steps such as the
@@ -117,6 +123,7 @@ engine keep their queue order.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `memory.safety_margin_bytes` | 1 GB | 0–8 GB. Room left for macOS, the browser and Rasva itself after the engine's peak. An assumption, not a measurement. Changeable only on the Mac (Settings → Memory) |
+| `memory.when_short` | `start` | `start` (run with a may-be-slow note) or `wait` (hold the job until memory frees). Settings → Memory |
 
 The Jobs page shows free memory and, when a job is held back, how much it
 needs (`GET /api/v1/system/status` → `memory`, `orchestrator.memory_wait`).
@@ -219,7 +226,7 @@ pronunciation entry does not mark existing takes as outdated.
 | Privacy audit | Done (automated): private text never reaches logs; engine logs rotate; Kokoro's text-quoting warnings suppressed |
 | Offline test | Done (automated): no outbound connections from the app process during normal use; engine workers run with offline flags **and cannot open network connections or look up hosts during load and generation** (Python-level socket guard, blocked attempts named in the engine log; [ADR-0009](docs/adr/0009-worker-network-guard.md)); UI bundle loads nothing remote. **Still to do on the M2:** a real run with Wi-Fi to the internet switched off, and loading each installed engine under the guard |
 | Mac sleep guidance | Shown when Wi-Fi access is on |
-| Memory guard (PRD §24) | Done (automated tests with mocked memory readings): cold starts wait until available memory covers the engine's peak plus a 1 GB margin, after unloading an idle other engine; status and Jobs page show memory ([details](#memory-guard-prd-24)). **Still to do on the M2:** real engines under the guard, and how quickly `available` recovers after an engine exits. With the measured peaks, Stable Diffusion needs 10 GB available and Chatterbox 7 GB; on 2026-11-20, with other work open, psutil reported 5.9 GB, so both would have waited, and even a 0 margin would not have let Stable Diffusion (9 GB) start. Whether that is acceptable is an owner decision. While a job waits, other jobs that load an engine (for example a Kokoro narration that would fit) wait behind it until it starts or is cancelled |
+| Memory guard (PRD §24) | Done: a cold start short of memory first unloads an idle other engine, then (default) starts anyway with a may-be-slow note, or with `memory.when_short = wait` waits until memory frees; jobs that can never fit fail at once ([details](#memory-guard-prd-24)). Checked on the M2 on 2026-11-21: with 5.8 GB available, a FLUX.2 Klein job (8 GB wanted) started with the note and finished a 768 × 1024 image in 66 s. Automated tests cover both policies with mocked readings |
 | App launches without the terminal | Built: `scripts/make_mac_app.sh` makes Rasva Studio and Stop Rasva apps ([details](docs/mac-launcher.md)). Tested with `open` on a dev port from a copy outside Downloads. **Still to do on the M2:** a Finder double-click, and allowing access to Downloads on first launch |
 | Usability testing · release checklist | Needs people and the M2 |
 
@@ -247,9 +254,9 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Image Studio | Done (first version): description, Quick / Balanced / Detailed, and in Advanced mode Avoid, seed, steps and guidance; results show the image, seed and time |
 | Measurements (M2, 2026-11-20) | 6 of 6 completed; cold load 14.5 s; median 52.6 s per 512 × 512 image at 25 steps; GPU memory reserved 8.5 GB; installed 2.75 GB ([details](docs/engines/sd15.md)) |
 | Exit-gate checks | Saved outputs are reproducible (same seed gives an identical file); the engine unloads, and Kokoro narrated normally afterwards; no network use; prompts stay out of logs |
-| Memory guard | Image jobs wait for about 10 GB available memory (9 GB measured peak + 1 GB margin) before a cold start ([details](#memory-guard-prd-24)) |
-| Image experiments | Built, not yet run on the M2: `image.generate` in Experiments (Advanced mode) with the 15-prompt `image-v1` set (objects, scenes, styles, words in the picture, people and hands; fixed seed per prompt) or your own descriptions, a thumbnail grid with 1–5 reviews, PRD §20.2 weights and the PRD's six quality subdimensions, memory gate on process + GPU memory ([details](docs/engines/sd15.md#image-experiments)) |
-| Still open | Quality review by eye (run `image-v1`); checking the memory guard with the real engine on the M2 |
+| Memory guard | Image jobs start even when memory is short, with a may-be-slow note (owner decision 2026-11-21); set `memory.when_short` to `wait` to hold them instead ([details](#memory-guard-prd-24)) |
+| Image experiments | Run on the M2 (2026-11-21): `image-v1`, FLUX.2 Klein Standard against SD 1.5 Balanced, 30 of 30 completed; median 69.8 s (768 px) against 51.7 s (512 px); both pass every gate (SD 1.5's accepted licence now passes). Owner ratings still to do ([details](docs/engines/sd15.md#image-experiments)) |
+| Still open | Owner's 1–5 ratings of the `image-v1` results |
 
 ## I1 status: edit from reference photos (ADR-0007)
 
@@ -259,7 +266,7 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Reference photos | Done: upload with a role (person, clothing, pose, background), change roles, choose up to 4; checked on create and retry ([references.py](backend/rasva/services/references.py)) |
 | Image Studio | Done: "Create from text" and "Edit a photo", engine choice in Advanced mode |
 | Measurements (M2, 2026-11-20) | 768 px: 50–53 s from text, 124 s with 1 photo, 167 s with 2; MLX peak 4.9–7.3 GB; installed 21.9 GB including the 16 GB originals ([details](docs/engines/flux2klein.md)) |
-| Still open | Owner review of quality; tests on photos of people; whether to delete the 16 GB originals |
+| Still open | Owner review of quality; tests on photos of real people. The 16 GB originals are kept (for an 8-bit comparison) |
 
 ## I4 status: image versions, export, cleanup (engine-independent parts)
 
@@ -283,10 +290,10 @@ model was run for this work.
 | Small image baseline works on M2 | Done (I0, SD 1.5, measured 2026-11-20). Quality review by eye still open |
 | Authorized person reference uploads work | Partly: uploads with a role (person, garment, pose, background) work (I1 base). Rasva does **not** record authorisation or consent for person photos (owner decision, ADR-0007). FLUX.2 Klein 4B edits with them on the M2 (I1) |
 | Multi-reference role assignment works | Up to 4 photos with roles per edit job (I1 base), tested with a fake engine. Versions group edits by photo and role |
-| Same-person pose change tested | Built and tested with a fake engine ([pose-control.md](docs/engines/pose-control.md), [test plan](docs/engines/pose-i2-test-plan.md)); not yet run with FLUX.2 Klein on a person photo |
-| Clothing change workflow tested | Built on FLUX.2 Klein and tested with a fake engine ([outfit.md](docs/engines/outfit.md), [test plan](docs/engines/outfit-test-plan.md)); not yet run on real photos |
-| Before/after, versions and PNG/JPEG exports work | Built and tested with a fake engine. Still to check with a real engine on the M2, and JPEG in Safari on a phone |
+| Same-person pose change tested | Run on the M2 with synthetic people (2026-11-21): DWPose installed (485 MB, 1.4 s per pose); the stick figure keeps the person and follows the pose (155–205 s). Sending the original pose photo copied that person's face, so that option was removed ([details](docs/engines/pose-control.md#measurements-on-the-m2-2026-11-21)). Real photos still to do |
+| Clothing change workflow tested | Run on the M2 with synthetic people (2026-11-21): a garment photo and a described saree both kept the person (179–278 s) ([details](docs/engines/outfit.md#measurements-on-the-m2-2026-11-21)). Real photos still to do |
+| Before/after, versions and PNG/JPEG exports work | Checked with FLUX.2 Klein on the M2: PNG "as made" is byte-identical, "with details" adds only software, model revision and an AI-generated note; "Try again, same seed" gave a byte-identical version; version cards fit 375 px. JPEG in Safari on a phone still to do |
 | Identity, body, clothing and artifact benchmarks completed | Not done |
-| Selected models fit tested memory and storage limits | SD 1.5 (8.5 GB GPU reserved, 2.75 GB installed) and FLUX.2 Klein 4B (MLX peak 4.9–7.3 GB, 21.9 GB installed). The I2 pose finder is not measured |
+| Selected models fit tested memory and storage limits | SD 1.5 (8.5 GB GPU, 2.75 GB installed), FLUX.2 Klein 4B (MLX peak 4.9–8.4 GB, 21.9 GB installed) and the DWPose pose finder (0.70 GB, 485 MB installed), all measured on the M2 |
 | LAN clients can submit and monitor | Done in automated tests. Not yet tried from a real phone |
 | Licensing, consent, safety and usability gates pass | Not met. Consent and safety are not met by design, pending owner review: no content filter on SD 1.5 (ADR-0006) or FLUX.2 Klein (ADR-0007), and no consent check for person photos (ADR-0007). Exports keep the AI-generated label by default, but it can be turned off. Licensing and usability reviews are not done. The real-model, real-photo and human-review items (§29.4 evaluation set, §29.5 targets) are not done |

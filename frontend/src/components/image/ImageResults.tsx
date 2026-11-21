@@ -19,6 +19,7 @@ const output = (j: Job) => j.outputs[0] ?? "";
 const builtInstruction = (j: Job) => typeof j.inputs.pose_source === "string" || (j.inputs.workflow as { name?: string } | undefined)?.name === "outfit";
 
 function titleOf(j: Job): string {
+  if (j.task === "image.pose") return "Pose figure";
   if (typeof j.inputs.pose_source === "string") {
     const extra = String(j.inputs.user_prompt ?? "").trim();
     return extra ? `New pose: ${extra}` : "New pose";

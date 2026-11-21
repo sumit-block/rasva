@@ -54,6 +54,19 @@ same lighthouse with the same stripes and rocks, while changing the time of
 day or season. A two-photo edit placed an object from one photo into the other
 in a matching style. No photos of people have been tried yet.
 
+### Later runs (2026-11-21, through the app)
+
+| Measure | Result |
+| --- | --- |
+| Text-to-image, `image-v1` (15 prompts, 768 px) | Median 69.8 s per image (66–85 s), median cold load 2.8 s, MLX peak 4.9 GB, 15 of 15 completed ([experiment](sd15.md#first-run-image-v1-flux2-klein-against-sd-15-2026-11-21)) |
+| Text-to-image, 768 × 1024 | 64–73 s |
+| Pose change (I2), 2 references | 155–205 s; MLX peak 6.2–8.4 GB ([pose-control.md](pose-control.md#measurements-on-the-m2-2026-11-21)) |
+| Outfit change (I3) | 278 s from a garment photo, 179 s from a description; MLX peak 8.4 GB ([outfit.md](outfit.md#measurements-on-the-m2-2026-11-21)) |
+| Memory policy | Jobs started with about 5.8 GB available, under the "start anyway" policy, and all finished |
+
+Edits with the long pose and outfit instructions peaked higher (8.4 GB) than
+the short 1-photo edit on 2026-11-20 (5.2 GB). The cause was not investigated.
+
 ## Decisions
 
 | Decision | Why |

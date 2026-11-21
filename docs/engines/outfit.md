@@ -1,9 +1,9 @@
 # I3 clothing replacement ("Change outfit"): engine choice
 
-Status: **draft recommendation, 2026-11-20**, updated after I1 merged. No model
-has been downloaded or run for I3. Every licence below needs the owner's confirmation. Sizes come from
-the Hugging Face file listings. Memory and quality are not measured yet: see
-the [test plan](outfit-test-plan.md).
+Status: **recommendation A built and run on the M2 (2026-11-21)** with FLUX.2
+Klein 4B, on synthetic people only (see [Measurements](#measurements-on-the-m2-2026-11-21)).
+Sizes come from the Hugging Face file listings. The full
+[test plan](outfit-test-plan.md) and real photos are still to do.
 
 ## What the feature does
 
@@ -94,7 +94,23 @@ body, pose and background. The result is shown next to the original.
 - The instruction wording is a first draft. It has not been tried on a real
   model. Change `INSTRUCTION_VERSION` when it changes.
 
-## Licences for the owner to confirm
+## Measurements on the M2 (2026-11-21)
+
+M2, 16 GB, through the app (`POST /projects/{id}/outfit`), FLUX.2 Klein 4B
+4-bit, 4 steps, 768 × 768. The person and garment photos were made by FLUX.2
+Klein: a fictional woman in a white kurta and jeans, and a green silk kurta
+with gold embroidery laid flat. No real people.
+
+| Run | Result |
+| --- | --- |
+| Garment from a photo ("Whatever the garment is") | Same face, hair, pose and jeans; the green kurta with its gold embroidered neckline was carried over, with a matching fit. 278 s; MLX peak 8.4 GB |
+| Garment described ("Whole outfit": "a mustard-yellow cotton saree with a thin maroon border") | Same face and stance; a draped saree with the border as described. 179 s; MLX peak 8.4 GB |
+| "Try again, same seed" on the saree | Byte-identical image |
+
+Found and fixed in this run: outfit jobs did not join I4's image versions, and
+"Try again" dropped the outfit record (commit `2205f92`).
+
+## Licences
 
 | Item | Licence | Source |
 | --- | --- | --- |
@@ -112,10 +128,9 @@ the panel shows a one-line reminder, and results are labelled as AI-generated.
 
 ## Not verified
 
-- Memory and speed of klein 4B (4-bit, mflux) on the M2 with two reference
-  photos.
-- Try-on quality of klein 4B for formal, casual, traditional Indian and long
-  garments, and across poses.
+- Results on photos of real people.
+- Try-on quality across formal, casual and long garments and across poses (two
+  synthetic runs so far).
 - Whether klein follows "image 1 / image 2" references in instructions as
   expected (the wording assumes it does).
 - MPS support for SAM 2.1 and Grounding DINO (only needed for C1).

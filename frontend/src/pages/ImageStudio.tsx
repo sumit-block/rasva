@@ -53,7 +53,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
   const seedValue = seed.trim() === "" ? undefined : Number(seed);
   const badSeed = seedValue !== undefined && !(Number.isInteger(seedValue) && seedValue >= 0 && seedValue <= MAX_SEED);
   const tooLong = prompt.length > MAX_CHARS || negative.length > MAX_CHARS;
-  const needsPhoto = mode === "edit" && refs.length === 0;
+  const needsPhoto = mode === "edit" && !refs.some((r) => r.role === "person");
   const blocked = !engine || !prompt.trim() || tooLong || badSeed || needsPhoto || submitting;
 
   const createProject = async () => {
@@ -191,7 +191,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
             <Button disabled={blocked} onClick={() => void generate()}>
               {mode === "edit" ? <Wand2 aria-hidden /> : <Sparkles aria-hidden />} {mode === "edit" ? "Edit photo" : "Generate image"}
             </Button>
-            {needsPhoto && <span className="ml-3 text-xs text-muted">Choose at least one photo.</span>}
+            {needsPhoto && <span className="ml-3 text-xs text-muted">Add the original photo.</span>}
           </div>
         </Card>
 

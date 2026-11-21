@@ -1,12 +1,12 @@
-import { ImagePlus } from "lucide-react";
+import { ImagePlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import {
   assetUrl,
-  MAX_REFERENCES,
   PHOTO_ROLES,
   projectAssets,
-  setPhotoRole,
   uploadAsset,
   type Asset,
   type PhotoRole,
@@ -16,12 +16,13 @@ import { usePasteTarget } from "@/lib/paste";
 import { cn } from "@/lib/utils";
 import { PasteButton } from "./PasteButton";
 
-const ROLE_LABEL: Record<PhotoRole, string> = {
-  person: "Person",
-  garment: "Clothing",
-  pose: "Pose",
-  background: "Background",
-};
+/** One box per role, in the order the engine reads them. */
+const BOXES: { role: PhotoRole; title: string; hint: string; required?: boolean }[] = [
+  { role: "person", title: "Original photo", hint: "The photo to change.", required: true },
+  { role: "garment", title: "Clothing", hint: "A garment to put on." },
+  { role: "pose", title: "Pose", hint: "A photo or figure in the pose you want." },
+  { role: "background", title: "Background", hint: "A place to put them in." },
+];
 
 const roleOf = (a: Asset): PhotoRole => {
   const r = a.metadata?.role;
@@ -29,8 +30,10 @@ const roleOf = (a: Asset): PhotoRole => {
 };
 
 /**
- * The project's reference photos: upload, give each a role, and pick up to
- * MAX_REFERENCES for an edit. Selection order is kept; the engine orders by role.
+ * Reference photos for an edit: a separate box for the original photo and for
+ * each optional clothing, pose and background photo. Each box takes an upload
+ * or a pasted picture, or one of that box's earlier photos. One photo per box,
+ * so at most four in all (the engine's limit).
  */
 export function ReferencePicker({ projectId, value, onChange, ensureProject }: {
   projectId: string | null;
@@ -39,9 +42,8 @@ export function ReferencePicker({ projectId, value, onChange, ensureProject }: {
   ensureProject: () => Promise<string>;
 }) {
   const [photos, setPhotos] = useState<Asset[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<PhotoRole | null>(null);
   const [error, setError] = useState<string>();
-  const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!projectId) return setPhotos([]);
@@ -55,82 +57,109 @@ export function ReferencePicker({ projectId, value, onChange, ensureProject }: {
     };
   }, [projectId]);
 
-  const selected = new Map(value.map((r) => [r.asset_id, r]));
-
-  const toggle = (a: Asset) => {
-    if (selected.has(a.id)) return onChange(value.filter((r) => r.asset_id !== a.id));
-    if (value.length >= MAX_REFERENCES) return setError(`Use at most ${MAX_REFERENCES} photos at once.`);
+  const choose = (role: PhotoRole, assetId: string | null) => {
     setError(undefined);
-    onChange([...value, { asset_id: a.id, role: roleOf(a) }]);
+    const rest = value.filter((r) => r.role !== role && r.asset_id !== assetId);
+    onChange(assetId ? [...rest, { asset_id: assetId, role }] : rest);
   };
 
-  const changeRole = async (a: Asset, role: PhotoRole) => {
-    try {
-      const updated = await setPhotoRole(a.id, role);
-      setPhotos((ps) => ps.map((p) => (p.id === a.id ? updated : p)));
-      onChange(value.map((r) => (r.asset_id === a.id ? { ...r, role } : r)));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  const upload = async (files: FileList | File[] | null) => {
-    if (!files?.length) return;
-    setBusy(true);
+  const upload = async (role: PhotoRole, file: File) => {
+    setBusy(role);
     setError(undefined);
     try {
       const pid = projectId ?? (await ensureProject());
-      const added: Asset[] = [];
-      for (const f of Array.from(files)) added.push(await uploadAsset(pid, f, "reference", added.length || photos.length ? "garment" : "person"));
-      setPhotos((ps) => [...ps, ...added]);
-      const room = MAX_REFERENCES - value.length;
-      onChange([...value, ...added.slice(0, Math.max(room, 0)).map((a) => ({ asset_id: a.id, role: roleOf(a) }))]);
+      const added = await uploadAsset(pid, file, "reference", role);
+      setPhotos((ps) => [added, ...ps]);
+      choose(role, added.id);
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setBusy(false);
-      if (input.current) input.current.value = "";
+      setBusy(null);
     }
   };
 
-  const paste = usePasteTarget((f) => void upload([f]), busy);
-
   return (
-    <div {...paste}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">Your photos <span className="font-normal text-muted">({value.length} of {MAX_REFERENCES} chosen)</span></p>
-        <label className={cn("inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-surface-2", busy && "opacity-60")}>
-          <ImagePlus className="size-4" aria-hidden /> {busy ? "Adding…" : "Add photos"}
-          <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only"
-            disabled={busy} onChange={(e) => void upload(e.target.files)} />
-        </label>
-        <PasteButton onFile={(f) => void upload([f])} onError={setError} disabled={busy} />
+    <div>
+      <p className="text-sm font-medium">Your photos</p>
+      <p className="text-xs text-muted">Upload or paste (⌘V while pointing at a box). Only the original photo is needed.</p>
+      <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
+        {BOXES.map((b) => (
+          <RoleBox key={b.role} {...b} busy={busy === b.role} disabled={busy !== null}
+            photos={photos.filter((a) => roleOf(a) === b.role)}
+            chosen={value.find((r) => r.role === b.role)?.asset_id ?? null}
+            onChoose={(id) => choose(b.role, id)} onFile={(f) => void upload(b.role, f)} onError={setError} />
+        ))}
       </div>
-      {photos.length === 0 ? (
-        <p className="mt-2 text-sm text-muted">Add or paste (⌘V) a photo of the person, and optionally a clothing, pose or background photo.</p>
-      ) : (
-        <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {photos.map((a) => {
-            const chosen = selected.has(a.id);
-            return (
-              <li key={a.id} className={cn("rounded-lg border p-2", chosen ? "border-accent bg-accent/10" : "border-border")}>
-                <button type="button" onClick={() => toggle(a)} aria-pressed={chosen} className="block w-full">
-                  <img src={assetUrl(a.id)} alt={a.original_name} loading="lazy" className="aspect-square w-full rounded-md object-cover" />
-                  <span className="mt-1 block truncate text-left text-xs text-muted">{chosen ? "Chosen · " : ""}{a.original_name}</span>
-                </button>
-                <label className="mt-1 block text-xs">
-                  <span className="sr-only">Role of {a.original_name}</span>
-                  <select value={roleOf(a)} onChange={(e) => void changeRole(a, e.target.value as PhotoRole)}
-                    className="min-h-9 w-full rounded-md border border-border bg-bg px-2 text-xs">
-                    {PHOTO_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                  </select>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-      )}
       {error && <Notice tone="error" className="mt-2">{error}</Notice>}
     </div>
+  );
+}
+
+function RoleBox({ role, title, hint, required, photos, chosen, busy, disabled, onChoose, onFile, onError }: {
+  role: PhotoRole;
+  title: string;
+  hint: string;
+  required?: boolean;
+  photos: Asset[];
+  chosen: string | null;
+  busy: boolean;
+  disabled: boolean;
+  onChoose: (assetId: string | null) => void;
+  onFile: (f: File) => void;
+  onError: (m: string) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const paste = usePasteTarget<HTMLElement>(onFile, disabled);
+  const current = photos.find((a) => a.id === chosen);
+  const others = photos.filter((a) => a.id !== chosen).slice(0, 6);
+
+  return (
+    <section {...paste} aria-label={title}
+      className={cn("rounded-lg border p-3", chosen ? "border-accent bg-accent/5" : "border-dashed border-border", required && !chosen && "border-accent/60")}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium">{title}</p>
+        {required ? <Badge>Needed</Badge> : <span className="text-xs text-muted">Optional</span>}
+      </div>
+      <p className="text-xs text-muted">{hint}</p>
+
+      {current ? (
+        <div className="relative mt-2">
+          <img src={assetUrl(current.id)} alt={`${title}: ${current.original_name}`}
+            className="h-40 w-full rounded-md bg-surface-2 object-contain" />
+          <Button size="sm" variant="secondary" className="absolute right-1 top-1" onClick={() => onChoose(null)}
+            aria-label={`Remove the ${title.toLowerCase()}`}>
+            <X aria-hidden /> Remove
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-2 flex h-16 w-full items-center justify-center rounded-md bg-surface-2 text-xs text-muted">
+          {busy ? "Adding…" : "No photo yet"}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" tabIndex={-1}
+          aria-label={`Upload: ${title}`}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} />
+        <Button size="sm" variant="secondary" disabled={disabled} onClick={() => input.current?.click()}>
+          <ImagePlus aria-hidden /> {current ? "Replace" : "Upload"}
+        </Button>
+        <PasteButton onFile={onFile} onError={onError} disabled={disabled} className="h-9 px-3 text-sm" />
+      </div>
+
+      {others.length > 0 && (
+        <div className="mt-2">
+          <p className="text-xs text-muted">Or pick an earlier {role === "person" ? "photo" : title.toLowerCase() + " photo"}</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {others.map((a) => (
+              <button key={a.id} type="button" onClick={() => onChoose(a.id)} title={a.original_name}
+                className="rounded-md border border-border p-0.5 hover:border-accent">
+                <img src={assetUrl(a.id)} alt={a.original_name} loading="lazy" className="size-12 rounded object-cover" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

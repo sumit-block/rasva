@@ -2,6 +2,7 @@ import { ImageIcon, Plus, Sparkles, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { JobRow } from "@/components/JobRow";
+import { OutfitPanel } from "@/components/image/OutfitPanel";
 import { PoseStudio } from "@/components/image/PoseStudio";
 import { ReferencePicker } from "@/components/image/ReferencePicker";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -60,6 +61,7 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
     return p;
   };
   const ensureProject = async () => {
+    if (projectId) return projectId;
     const p = await createProject();
     setParams({ project: p.id, ...(mode === "edit" ? { mode } : {}) });
     return p.id;
@@ -241,13 +243,10 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
       </section>
 
       {/* Phase I2: same person, new pose (components/image/PoseStudio.tsx). */}
-      <PoseStudio projectId={projectId} models={models}
-        ensureProject={async () => {
-          if (projectId) return projectId;
-          const p = await createProject();
-          setParams({ project: p.id });
-          return p.id;
-        }} />
+      <PoseStudio projectId={projectId} models={models} ensureProject={ensureProject} />
+
+      {/* Phase I3: change outfit (components/image/OutfitPanel.tsx). */}
+      <OutfitPanel projectId={projectId} ensureProject={ensureProject} />
     </>
   );
 }

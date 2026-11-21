@@ -195,7 +195,10 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
     if old["task"] == "model.remove":
         return remove_model(old["engine_id"], state, conn)
     # Retry exactly what was generated before, including its pronunciation choices.
-    keep = (*pronunciation_svc.EXTRA_KEYS, "preset", "chapter_id", "segment_id", "voice_profile_id")
+    keep = (
+        *pronunciation_svc.EXTRA_KEYS, "preset", "chapter_id", "segment_id", "voice_profile_id",
+        "workflow",  # I3 outfit: which garment source was used
+    )  # fmt: skip
     extras = {k: v for k, v in old["inputs"].items() if k in keep}
     raw = {k: v for k, v in old["inputs"].items() if k not in keep and k != "reference"}
     if old["inputs"].get("voice_profile_id"):

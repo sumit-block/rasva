@@ -18,6 +18,9 @@ DEFAULTS: dict[str, Any] = {
     "lan.enabled": False,
     # Memory left over after an engine's measured peak before a cold start (PRD §24).
     "memory.safety_margin_bytes": DEFAULT_SAFETY_MARGIN_BYTES,
+    # When a cold start is short of memory: "start" anyway (may be slow while
+    # macOS compresses or swaps) or "wait" until enough is free (PRD §24).
+    "memory.when_short": "start",
     # Ask image engines that support it to use less memory (services/images.py).
     "image.low_memory": False,
 }
@@ -29,7 +32,10 @@ _LIMITS: dict[str, tuple[int, int]] = {
     "onboarding.step": (0, 20),
     "memory.safety_margin_bytes": (0, 8 * GB),
 }
-_ENUMS: dict[str, set[Any]] = {"ui.mode": {"simple", "advanced"}}
+_ENUMS: dict[str, set[Any]] = {
+    "ui.mode": {"simple", "advanced"},
+    "memory.when_short": {"start", "wait"},
+}
 # Not settable through the generic API: LAN needs pairing + TLS (phase A5).
 READ_ONLY = {"lan.enabled"}
 

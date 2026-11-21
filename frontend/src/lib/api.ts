@@ -145,6 +145,7 @@ export type AppSettings = {
   "onboarding.step": number;
   "lan.enabled": boolean;
   "memory.safety_margin_bytes": number;
+  "memory.when_short": "start" | "wait";
   "image.low_memory": boolean;
 };
 

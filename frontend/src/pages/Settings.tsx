@@ -152,6 +152,16 @@ function MemoryCard() {
   const [marginGb, setMarginGb] = useState("");
   const [message, setMessage] = useState<{ tone: "info" | "error"; text: string }>();
   const current = settings.data?.["memory.safety_margin_bytes"];
+  const whenShort = settings.data?.["memory.when_short"] ?? "start";
+
+  const setWhenShort = async (value: "start" | "wait") => {
+    try {
+      await api.updateSettings({ "memory.when_short": value });
+      await settings.reload();
+    } catch (e) {
+      setMessage({ tone: "error", text: (e as Error).message });
+    }
+  };
 
   const save = async () => {
     const gb = Number(marginGb);
@@ -170,9 +180,25 @@ function MemoryCard() {
     <Card>
       <CardTitle>Memory</CardTitle>
       <CardDescription>
-        An engine starts only when your Mac has enough free memory for it plus this margin. Otherwise its job waits and starts
-        on its own when memory frees up. A smaller margin starts jobs sooner but risks a slow Mac.
+        Before an engine starts, Rasva checks for enough free memory for it plus this margin. A job that could never fit on
+        this Mac fails straight away.
       </CardDescription>
+      <fieldset className="mt-4">
+        <legend className="mb-1 text-sm font-medium">When memory is short</legend>
+        {([
+          ["start", "Start anyway (may be slow)", "macOS makes room by compressing or swapping, so the job takes longer. Closing other apps helps."],
+          ["wait", "Wait until memory frees up", "The job stays queued and starts on its own when enough memory is free."],
+        ] as const).map(([value, label, hint]) => (
+          <label key={value} className="flex min-h-11 items-start gap-2 py-1 text-sm">
+            <input type="radio" name="memory-when-short" className="mt-1" checked={whenShort === value}
+              onChange={() => void setWhenShort(value)} />
+            <span>
+              <span className="block font-medium">{label}</span>
+              <span className="block text-muted">{hint}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
       <div className="mt-4 flex flex-wrap items-end gap-2">
         <label className="text-sm">
           <span className="mb-1 block font-medium">Safety margin (GB, 0–8)</span>

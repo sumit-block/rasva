@@ -14,8 +14,16 @@ WAITING = "Waiting for memory"
 
 @pytest.fixture
 def client(settings):
+    """Most tests here cover the "wait" policy; the default is "start"."""
     with make_client(settings, extra_engines=(HEAVY,)) as c:
+        r = c.patch("/api/v1/settings", json={"memory.when_short": "wait"})
+        assert r.status_code == 200, r.text
         yield c
+
+
+def use_start_policy(client):
+    r = client.patch("/api/v1/settings", json={"memory.when_short": "start"})
+    assert r.status_code == 200, r.text
 
 
 def submit(client, project, engine_id="test-heavy", task="test.run", **inputs):
@@ -185,3 +193,42 @@ def test_status_reports_memory(client, memory):
     assert status(client)["memory"]["level"] == "tight"
     memory.available = 8 * GB
     assert status(client)["memory"]["level"] == "ok"
+
+
+def test_default_policy_is_start(settings):
+    from rasva.services.settings_store import DEFAULTS
+
+    assert DEFAULTS["memory.when_short"] == "start"
+
+
+def test_starts_when_short_and_says_it_may_be_slow(client, project, memory):
+    use_start_policy(client)
+    memory.available = 3 * GB  # 4 GB peak + 1 GB margin wanted
+    done = wait_for(client, submit(client, project)["id"], TERMINAL)
+    assert done["state"] == "completed", done
+    assert done["metrics"]["memory_short"] == {"needed_bytes": 5 * GB, "available_bytes": 3 * GB}
+    loading = next(e for e in done["events"] if e["state"] == "loading_model")
+    expected = "Memory is short (3 GB free, about 5 GB wanted), so this may be slow"
+    assert expected in loading["detail"]
+    assert not any((e["detail"] or "").startswith(WAITING) for e in done["events"])
+    assert status(client)["orchestrator"]["memory_wait"] is None
+
+
+def test_start_policy_still_fails_what_can_never_fit(client, project, memory):
+    use_start_policy(client)
+    memory.total = 4 * GB
+    done = wait_for(client, submit(client, project)["id"], TERMINAL)
+    assert done["state"] == "failed"
+    assert done["error_code"] == "not_enough_memory"
+
+
+def test_enough_memory_has_no_short_note(client, project, memory):
+    use_start_policy(client)
+    memory.available = 8 * GB
+    done = wait_for(client, submit(client, project)["id"], TERMINAL)
+    assert "memory_short" not in done["metrics"]
+
+
+def test_when_short_rejects_unknown_values(client):
+    r = client.patch("/api/v1/settings", json={"memory.when_short": "maybe"})
+    assert r.status_code in (400, 422)

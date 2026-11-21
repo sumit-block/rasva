@@ -68,7 +68,7 @@ MSG_MEMORY_KILL = (
     "Your Mac ran low on memory and macOS stopped the engine. Your other work is safe. "
     "Close other apps or choose a lighter preset, then retry."
 )
-MemoryVerdict = Literal["go", "wait", "failed"]
+MemoryVerdict = Literal["go", "short", "wait", "failed"]
 
 
 class WorkerGone(Exception):
@@ -167,6 +167,8 @@ class Orchestrator:
         self._cancel = asyncio.Event()
         # Set while the next heavy job is held back for memory; shown in status.
         self._memory_wait: dict[str, Any] | None = None
+        # Jobs started although memory was short: {job_id: {needed, available}}.
+        self._memory_short: dict[str, dict[str, int]] = {}
         self._installer = Installer(
             settings,
             self._conn,
@@ -274,7 +276,7 @@ class Orchestrator:
             verdict = await self._memory_verdict(head)
             if verdict == "failed":
                 continue
-            if verdict == "go":
+            if verdict in ("go", "short"):
                 self._memory_wait = None
                 return head
             return next((j for j in queued[1:] if not self._needs_memory_check(j)), None)
@@ -324,6 +326,23 @@ class Orchestrator:
             reading = memory_svc.read()
             if reading.available_bytes >= needed:
                 return "go"
+        if SettingsStore(self._conn).get("memory.when_short") == "start":
+            # Owner policy: start anyway. macOS compresses or swaps to make room,
+            # which slows the job down but usually lets it finish.
+            self._memory_short[job["id"]] = {
+                "needed_bytes": needed,
+                "available_bytes": reading.available_bytes,
+            }
+            log.info(
+                "starting although memory is short",
+                extra={
+                    "job": job["id"],
+                    "engine": job["engine_id"],
+                    "needed_bytes": needed,
+                    "available_bytes": reading.available_bytes,
+                },
+            )
+            return "short"
         self._hold_for_memory(job, d.display_name, needed, reading)
         return "wait"
 
@@ -378,6 +397,7 @@ class Orchestrator:
             await self._execute_model_task(job)
             return
         job_id = job["id"]
+        short = self._memory_short.pop(job_id, None)
         engine = self._registry.get(job["engine_id"])
         if engine is None or (
             engine.descriptor.requires_install
@@ -399,6 +419,8 @@ class Orchestrator:
         staging.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
         metrics: dict[str, Any] = {}
+        if short:
+            metrics["memory_short"] = short
         try:
             if repo.get(self._conn, job_id)["cancel_requested"]:
                 self._transition(job_id, JobState.CANCELED, detail="Canceled")
@@ -528,7 +550,16 @@ class Orchestrator:
             w = await self._spawn(engine)
             self._worker = w
         if not w.loaded:
-            self._transition(job_id, JobState.LOADING_MODEL, detail="Loading engine")
+            short = metrics.get("memory_short")
+            detail = "Loading engine"
+            if short:
+                free = memory_svc.format_gb(short["available_bytes"])
+                wanted = memory_svc.format_gb(short["needed_bytes"])
+                detail = (
+                    f"Loading engine. Memory is short ({free} free, about {wanted} wanted), "
+                    "so this may be slow. Closing other apps helps."
+                )
+            self._transition(job_id, JobState.LOADING_MODEL, detail=detail)
             await w.send({"op": "load"})
             event = await self._await_terminal_event(w, job_id, accept={"loaded", "error"})
             if event is None:

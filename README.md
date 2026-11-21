@@ -268,6 +268,10 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Measurements (M2, 2026-11-20) | 768 px: 50–53 s from text, 124 s with 1 photo, 167 s with 2; MLX peak 4.9–7.3 GB; installed 21.9 GB including the 16 GB originals ([details](docs/engines/flux2klein.md)) |
 | Still open | Owner review of quality; tests on photos of real people. The 16 GB originals are kept (for an 8-bit comparison) |
 
+## Image Studio now (ADR-0011)
+
+Owner decision, 2026-11-21: Qwen-Image 2.1 Turbo is the only image model, and Image Studio is one form: write what you want, attach or paste up to four photos (or drop them on the form), and Generate. Without photos it makes a new picture; with photos it edits them. Stable Diffusion 1.5, FLUX.2 Klein and the pose finder were uninstalled, and the pose, outfit, versions, compare and export panels were removed from the UI. Their engines and APIs remain in the code, and the sections below record how they were built and measured.
+
 ## Qwen-Image 2.1 Turbo (owner's private use, ADR-0010)
 
 | Item | Status |

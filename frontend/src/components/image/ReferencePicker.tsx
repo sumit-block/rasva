@@ -12,7 +12,9 @@ import {
   type PhotoRole,
   type ReferenceInput,
 } from "@/lib/api";
+import { usePasteTarget } from "@/lib/paste";
 import { cn } from "@/lib/utils";
+import { PasteButton } from "./PasteButton";
 
 const ROLE_LABEL: Record<PhotoRole, string> = {
   person: "Person",
@@ -72,7 +74,7 @@ export function ReferencePicker({ projectId, value, onChange, ensureProject }: {
     }
   };
 
-  const upload = async (files: FileList | null) => {
+  const upload = async (files: FileList | File[] | null) => {
     if (!files?.length) return;
     setBusy(true);
     setError(undefined);
@@ -91,18 +93,21 @@ export function ReferencePicker({ projectId, value, onChange, ensureProject }: {
     }
   };
 
+  const paste = usePasteTarget((f) => void upload([f]), busy);
+
   return (
-    <div>
-      <div className="flex items-center justify-between">
+    <div {...paste}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">Your photos <span className="font-normal text-muted">({value.length} of {MAX_REFERENCES} chosen)</span></p>
         <label className={cn("inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-surface-2", busy && "opacity-60")}>
           <ImagePlus className="size-4" aria-hidden /> {busy ? "Adding…" : "Add photos"}
           <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only"
             disabled={busy} onChange={(e) => void upload(e.target.files)} />
         </label>
+        <PasteButton onFile={(f) => void upload([f])} onError={setError} disabled={busy} />
       </div>
       {photos.length === 0 ? (
-        <p className="mt-2 text-sm text-muted">Add a photo of the person, and optionally a clothing, pose or background photo.</p>
+        <p className="mt-2 text-sm text-muted">Add or paste (⌘V) a photo of the person, and optionally a clothing, pose or background photo.</p>
       ) : (
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {photos.map((a) => {

@@ -11,7 +11,9 @@ import { useAsync } from "@/hooks/useAsync";
 import { useJobs } from "@/hooks/useJobs";
 import { api, assetUrl, isUsable, projectAssets, TERMINAL_STATES, type Asset, type Job } from "@/lib/api";
 import { STATE_LABEL } from "@/lib/format";
+import { usePasteTarget } from "@/lib/paste";
 import { cn } from "@/lib/utils";
+import { PasteButton } from "./PasteButton";
 import {
   changeOutfit,
   GARMENT_TYPES,
@@ -33,6 +35,7 @@ function PhotoPicker({
   exclude,
   onChange,
   onUpload,
+  onError,
   busy,
 }: {
   label: string;
@@ -42,12 +45,14 @@ function PhotoPicker({
   exclude?: string | null;
   onChange: (id: string) => void;
   onUpload: (file: File, role: ReferenceRole) => void;
+  onError: (message: string) => void;
   busy: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const paste = usePasteTarget<HTMLFieldSetElement>((f) => onUpload(f, role), busy);
   const shown = photos.filter((p) => p.id !== exclude);
   return (
-    <fieldset className="mt-3">
+    <fieldset {...paste} className="mt-3">
       <legend className="text-sm font-medium">{label}</legend>
       <div role="radiogroup" aria-label={label} className="mt-2 flex flex-wrap gap-2">
         {shown.map((p) => (
@@ -60,6 +65,7 @@ function PhotoPicker({
           onClick={() => input.current?.click()}>
           <Upload aria-hidden /> Add photo
         </Button>
+        <PasteButton className="size-20 flex-col gap-1 text-xs" onFile={(f) => onUpload(f, role)} onError={onError} disabled={busy} />
         <input ref={input} type="file" accept={IMAGE_TYPES.join(",")} className="sr-only" tabIndex={-1}
           aria-label={`Add a ${role} photo`}
           onChange={(e) => {
@@ -217,7 +223,7 @@ export function OutfitPanel({ projectId, ensureProject }: { projectId: string | 
         )}
 
         <PhotoPicker label="Person" role="person" photos={photos} value={person} exclude={garment}
-          onChange={setPerson} onUpload={(f, r) => void upload(f, r)} busy={busy} />
+          onChange={setPerson} onUpload={(f, r) => void upload(f, r)} onError={setError} busy={busy} />
 
         <fieldset className="mt-4">
           <legend className="text-sm font-medium">Garment</legend>
@@ -231,7 +237,7 @@ export function OutfitPanel({ projectId, ensureProject }: { projectId: string | 
           </div>
           {mode === "photo" && (
             <PhotoPicker label="Garment photo" role="garment" photos={photos} value={garment} exclude={person}
-              onChange={setGarment} onUpload={(f, r) => void upload(f, r)} busy={busy} />
+              onChange={setGarment} onUpload={(f, r) => void upload(f, r)} onError={setError} busy={busy} />
           )}
           <label htmlFor="garment-text" className="mt-3 block text-sm">
             {mode === "photo" ? "Extra details (optional)" : "Describe the garment"}

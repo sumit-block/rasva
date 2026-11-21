@@ -8,7 +8,9 @@ import { useJobs } from "@/hooks/useJobs";
 import { usePrefs } from "@/hooks/usePrefs";
 import { api, assetUrl, isUsable, TERMINAL_STATES, type EngineInfo, type Job } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { usePasteTarget } from "@/lib/paste";
 import { CompareView } from "./CompareView";
+import { PasteButton } from "./PasteButton";
 import {
   builtInPoseAsset, builtInPoses, changePose, EDIT_TASK, extractPose, FRAMING_LABEL, IDENTITY, imageAssets,
   isPoseChange, isPoseFigure, POSE_TASK, referencesOf, roleOf, uploadReference,
@@ -32,16 +34,18 @@ function Thumb({ src, alt, selected, onClick, children }: { src: string; alt: st
   );
 }
 
-function FilePick({ label, onFile, disabled }: { label: string; onFile: (f: File) => void; disabled?: boolean }) {
+function FilePick({ label, onFile, onError, disabled }: { label: string; onFile: (f: File) => void; onError: (m: string) => void; disabled?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
+  const paste = usePasteTarget(onFile, disabled);
   return (
-    <>
+    <div {...paste} className="flex flex-wrap gap-2">
       <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" tabIndex={-1}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} />
       <Button variant="secondary" disabled={disabled} onClick={() => ref.current?.click()}>
         <Upload aria-hidden /> {label}
       </Button>
-    </>
+      <PasteButton onFile={onFile} onError={onError} disabled={disabled} />
+    </div>
   );
 }
 
@@ -200,7 +204,7 @@ export function PoseStudio({ projectId, ensureProject, models }: {
         <Card>
           <CardTitle>1. The person</CardTitle>
           <CardDescription>A clear photo where the face is visible. Full-body photos keep the clothes best.</CardDescription>
-          <div className="mt-3"><FilePick label="Upload a photo" onFile={(f) => void addPerson(f)} disabled={busy} /></div>
+          <div className="mt-3"><FilePick label="Upload a photo" onFile={(f) => void addPerson(f)} onError={setError} disabled={busy} /></div>
           {people.length > 0 && (
             <div className="mt-3 grid grid-cols-3 gap-2">
               {people.map((a) => (
@@ -214,7 +218,7 @@ export function PoseStudio({ projectId, ensureProject, models }: {
           <CardTitle>2. The pose</CardTitle>
           <CardDescription>Pick a figure, or upload a photo of someone in the pose you want.</CardDescription>
           <div className="mt-3 flex flex-wrap gap-2">
-            <FilePick label="Pose from a photo" onFile={(f) => void addPosePhoto(f)} disabled={busy || extracting} />
+            <FilePick label="Pose from a photo" onFile={(f) => void addPosePhoto(f)} onError={setError} disabled={busy || extracting} />
           </div>
           {!poseEngine && <p className="mt-2 text-xs text-muted">Reading a pose from a photo needs the pose finder (install it from Models). The figures below work without it.</p>}
           {extractJob && extractJob.state !== "completed" && extractJob.state !== "canceled" && (

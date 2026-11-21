@@ -334,3 +334,16 @@ def test_outfit_jobs_are_image_versions(client, project):
     wait_for(client, again.json()["id"], {"completed", "failed"})
     groups = client.get(f"/api/v1/projects/{project['id']}/image-groups").json()
     assert len(groups) == 1 and len(groups[0]["versions"]) == 2
+
+
+def test_prefers_the_editor_tested_for_outfits(settings):
+    """Installing a second editor (e.g. Qwen-Image) must not reroute outfit changes."""
+    plain_first = (EDITOR, "tests.fake_image_editor:FakeOutfitEditor")
+    with make_client(settings, extra_engines=plain_first) as client:
+        project = client.post("/api/v1/projects", json={"name": "Looks", "module": "image"}).json()
+        person = upload(client, project["id"])
+        r = change(
+            client, project["id"], person_asset_id=person["id"], garment_description="a shirt"
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["engine_id"] == "test-outfit-editor"

@@ -30,6 +30,7 @@ from rasva.services.presets import PresetError, apply_preset
 router = APIRouter(tags=["image"])
 
 TASK = "image.edit"
+OUTFIT_FEATURE = "outfit"
 
 
 class OutfitCreate(BaseModel):
@@ -62,9 +63,15 @@ def _engine(state: State, conn: sqlite3.Connection, engine_id: str | None) -> Re
             raise ApiError(422, "engine_unavailable", "That engine cannot change outfits.")
         return engine
     store = ModelStore(conn)
-    for engine in state.registry.for_task(TASK):
-        if not engine.descriptor.requires_install or store.is_installed(engine.descriptor.id):
-            return engine
+    installed = [
+        e for e in state.registry.for_task(TASK)
+        if not e.descriptor.requires_install or store.is_installed(e.descriptor.id)
+    ]  # fmt: skip
+    # Prefer an engine the outfit workflow was tested on (feature "outfit"), so
+    # installing another editor does not silently change which one runs.
+    tested = [e for e in installed if OUTFIT_FEATURE in e.descriptor.features]
+    if tested or installed:
+        return (tested or installed)[0]
     raise ApiError(
         422,
         "no_engine",

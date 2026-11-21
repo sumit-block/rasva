@@ -125,7 +125,8 @@ export function OutfitPanel({ projectId, ensureProject }: { projectId: string | 
   const models = useAsync(api.models);
   const { jobs, upsert } = useJobs();
   const engines = useMemo(() => (models.data ?? []).filter((m) => m.tasks.includes(EDIT_TASK)), [models.data]);
-  const engine = engines.find(isUsable);
+  // Prefer a model the outfit workflow was tested on (FLUX.2 Klein), as the server does.
+  const engine = engines.find((m) => m.features.includes("outfit") && isUsable(m)) ?? engines.find(isUsable);
 
   const [photos, setPhotos] = useState<Asset[]>([]);
   const [person, setPerson] = useState<string | null>(null);

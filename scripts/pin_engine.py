@@ -5,6 +5,7 @@
     python3 scripts/pin_engine.py sd15
     python3 scripts/pin_engine.py flux2klein
     python3 scripts/pin_engine.py dwpose          (pose finder, phase I2)
+    python3 scripts/pin_engine.py qwen21turbo     (Qwen-Image 2.1 Turbo, owner's private use)
     python3 scripts/pin_engine.py indicf5 [--reviewed-code]
     python3 scripts/pin_engine.py kokoro            (same as scripts/pin_kokoro.py)
 
@@ -110,6 +111,28 @@ SPECS = {
                 "tokenizer/merges.txt", "tokenizer/special_tokens_map.json",
                 "tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json",
                 "tokenizer/vocab.json",
+                "vae/config.json", "vae/diffusion_pytorch_model.safetensors",
+            ],
+        }],
+    },
+    "qwen21turbo": {
+        "engine": "qwen-image-2.1-turbo",
+        "dir": "qwen21turbo",
+        "sources": [{
+            # Official bf16 files in the diffusers layout that mflux reads; the
+            # sample images are left out. Qwen Research License: owner decision,
+            # private non-commercial use (ADR-0010). Quantised to 4-bit at install.
+            "repo": "Qwen/Qwen-Image-2.1-Turbo", "subdir": "",
+            "files": [
+                "LICENSE", "model_index.json", "scheduler/scheduler_config.json",
+                "processor/chat_template.jinja", "processor/processor_config.json",
+                "processor/tokenizer.json", "processor/tokenizer_config.json",
+                "text_encoder/config.json", "text_encoder/generation_config.json",
+                "text_encoder/model.safetensors",
+                "transformer/config.json",
+                "transformer/diffusion_pytorch_model.safetensors.index.json",
+                "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+                "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
                 "vae/config.json", "vae/diffusion_pytorch_model.safetensors",
             ],
         }],

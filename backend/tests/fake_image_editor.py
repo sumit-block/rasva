@@ -69,3 +69,11 @@ class FakeImageEditor(Engine):
             )],
             metrics={"references": len(inputs["references"])},
         )  # fmt: skip
+
+
+class FakeOutfitEditor(FakeImageEditor):
+    """An editor marked as tested for the outfit workflow (like FLUX.2 Klein)."""
+
+    descriptor = FakeImageEditor.descriptor.model_copy(
+        update={"id": "test-outfit-editor", "features": ["references", "outfit"]}
+    )

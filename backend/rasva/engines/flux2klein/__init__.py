@@ -42,6 +42,14 @@ from rasva.engines.contract import (
     RuntimeContext,
     SystemFacts,
 )
+from rasva.engines.mlx_common import CACHE_LIMIT_BYTES, step_callback
+from rasva.engines.mlx_common import REFERENCE_MAX_SIDE as REFERENCE_MAX_SIDE
+from rasva.engines.mlx_common import call as _call
+from rasva.engines.mlx_common import clear_cache as _clear_cache
+from rasva.engines.mlx_common import peak as _peak
+from rasva.engines.mlx_common import prepare_references as _prepare_references
+from rasva.engines.mlx_common import quiet_library_logs as _quiet_library_logs
+from rasva.engines.mlx_common import reset_peak as _reset_peak
 from rasva.engines.pose import edit as pose_edit  # I2: same person, new pose
 
 ENGINE_ID = "flux2-klein-4b"
@@ -54,8 +62,6 @@ MARKER = "rasva-prepared.json"
 MAX_PROMPT_CHARS = 2_000
 MAX_SEED = 2**32 - 1
 MAX_REFERENCES = 4
-CACHE_LIMIT_BYTES = 1024**3
-REFERENCE_MAX_SIDE = 1024  # phone photos are large; bigger adds memory, not detail
 SIZE_RANGE = (256, 1024)
 DEFAULTS = {"steps": 4, "guidance": 1.0, "width": 768, "height": 768}
 RANGES = {"steps": (1, 8), "guidance": (1.0, 5.0)}
@@ -89,7 +95,8 @@ class Flux2KleinEngine(Engine):
         version="4B-q4",
         modality="image",
         tasks=list(TASKS),
-        features=["prompt", "seed", "references", "presets", "pose"],
+        # "pose" and "outfit": the I2 and I3 workflows were built and tested on this engine.
+        features=["prompt", "seed", "references", "presets", "pose", "outfit"],
         license="Apache-2.0 (model); mflux is MIT",
         license_class="permissive",
         license_notes=[
@@ -246,21 +253,9 @@ class Flux2KleinEngine(Engine):
         if self._model is not None:
             self._model = None
             _clear_cache()
-        engine = self
-
-        class Steps:  # mflux in-loop callback: progress and cooperative cancel
-            def call_in_loop(self, t: int, seed: int, prompt: str, latents: Any,
-                             config: Any, time_steps: Any) -> None:  # fmt: skip
-                job = engine._job
-                if not job:
-                    return
-                job["ctx"].raise_if_canceled()
-                n = job["steps"]
-                job["ctx"].report_progress((t + 1) / (n + 1), f"Step {t + 1} of {n}")
-
         cls = Flux2KleinEdit if kind == "edit" else Flux2Klein
         self._model = cls(model_path=str(self._q_dir))
-        self._model.callbacks.register(Steps())
+        self._model.callbacks.register(step_callback(self))
         self._kind = kind
         return self._model
 
@@ -334,59 +329,3 @@ def _prepared(model_dir: Path) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return info if info.get("bits") == BITS else None
-
-
-def _prepare_references(refs: list[dict[str, Any]], out_dir: Path) -> list[str]:
-    """Upright (EXIF rotation applied), RGB, at most 1024 px on the long side.
-
-    A reference with ``max_side`` (I2 pose jobs) is resized to exactly that long
-    side, up or down: the identity settings send person and pose at set sizes."""
-    from PIL import Image, ImageOps
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for k, ref in enumerate(refs):
-        with Image.open(ref["path"]) as img:
-            pic = ImageOps.exif_transpose(img).convert("RGB")
-        side = ref.get("max_side")
-        if side:
-            scale = int(side) / max(pic.size)
-            size = (max(1, round(pic.width * scale)), max(1, round(pic.height * scale)))
-            if size != pic.size:
-                pic = pic.resize(size, Image.LANCZOS)
-        else:
-            pic.thumbnail((REFERENCE_MAX_SIDE, REFERENCE_MAX_SIDE))
-        target = out_dir / f"{k}.png"
-        pic.save(target, format="PNG")
-        paths.append(str(target))
-    return paths
-
-
-def _call(mx: Any, name: str, *args: Any) -> Any:
-    """Call an MLX memory function wherever this MLX version keeps it."""
-    for owner in (mx, getattr(mx, "metal", None)):
-        if owner is not None and hasattr(owner, name):
-            return getattr(owner, name)(*args)
-    return None
-
-
-def _clear_cache() -> None:
-    import mlx.core as mx
-
-    _call(mx, "clear_cache")
-
-
-def _reset_peak(mx: Any) -> None:
-    _call(mx, "reset_peak_memory")
-
-
-def _peak(mx: Any) -> int | None:
-    peak = _call(mx, "get_peak_memory")
-    return int(peak) if peak is not None else None
-
-
-def _quiet_library_logs() -> None:
-    """Keep library chatter (which can quote prompts) out of engine logs."""
-    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
-    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ.setdefault("TQDM_DISABLE", "1")

@@ -1,0 +1,8 @@
+# Inputs for the Qwen-Image 2.1 Turbo engine environment (ADR-0003, ADR-0010): the same
+# mflux 0.24.0 as FLUX.2 Klein. MLX needs macOS 14 or newer, so lock for that target. Regenerate with:
+#   MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements.in --generate-hashes \
+#     --only-binary :all: --python-version 3.12 --python-platform aarch64-apple-darwin \
+#     --no-header --no-annotate -o requirements.lock
+mflux==0.24.0
+# Needed by the Rasva worker protocol (rasva.engines.contract).
+pydantic>=2.7,<3

@@ -1,4 +1,4 @@
-import { Boxes, Download, Trash2 } from "lucide-react";
+import { Boxes, Download, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,8 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
   const running = job && !TERMINAL_STATES.has(job.state);
   const installed = model.install_state === "installed";
   const canInstall = model.install_state === "not_installed" || model.install_state === "failed";
+  const updating = running && job?.task === "model.update";
+  const canUpdate = installed && model.software_update_available && !running;
 
   const act = async (fn: () => Promise<Job>) => {
     setBusy(true);
@@ -110,11 +112,22 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
         <Notice tone="error" className="mt-3">{model.compatibility.reasons.join(" ")}</Notice>
       )}
 
+      {canUpdate && (
+        <Notice className="mt-3">
+          <p className="font-medium">Software update available</p>
+          <p className="mt-1">
+            Rasva has updated software for this engine. Updating takes a few minutes and needs the
+            internet. Your downloaded model files and projects are kept, and if the update doesn't work, the
+            current version keeps working.
+          </p>
+        </Notice>
+      )}
+
       {running && job && (
         <div className="mt-4" aria-live="polite">
           <Progress
             value={job.state === "downloading" ? job.progress : null}
-            label={`${model.display_name}: ${STATE_LABEL[job.state]}`}
+            label={`${model.display_name}: ${updating ? "Updating software" : STATE_LABEL[job.state]}`}
           />
           <p className="mt-1 text-xs text-muted">{job.stage_detail ?? STATE_LABEL[job.state]}</p>
         </div>
@@ -154,6 +167,11 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
         ) : (
           confirming === null && (
           <>
+            {canUpdate && (
+              <Button size="sm" disabled={busy} onClick={() => act(() => api.updateModel(model.id))}>
+                <RefreshCw aria-hidden /> Update
+              </Button>
+            )}
             {canInstall && model.compatibility.compatible && (
               <Button size="sm" disabled={busy} onClick={() => install()}>
                 <Download aria-hidden /> {model.install_state === "failed" ? "Resume install" : "Install"}
@@ -170,6 +188,12 @@ function ModelCard({ model, liveJob, onChanged }: { model: EngineInfo; liveJob: 
       </div>
     </Card>
   );
+}
+
+/** The engine's open install/update/remove job if any, else its most recent one (list is newest-first). */
+function liveModelJob(jobs: Job[], engineId: string): Job | undefined {
+  const mine = jobs.filter((j) => j.engine_id === engineId && j.task.startsWith("model."));
+  return mine.find((j) => !TERMINAL_STATES.has(j.state)) ?? mine[0];
 }
 
 export function ModelsPage() {
@@ -201,7 +225,7 @@ export function ModelsPage() {
           <li key={m.id}>
             <ModelCard
               model={m}
-              liveJob={jobs.find((j) => j.engine_id === m.id && j.task.startsWith("model."))}
+              liveJob={liveModelJob(jobs, m.id)}
               onChanged={() => void models.reload()}
             />
           </li>

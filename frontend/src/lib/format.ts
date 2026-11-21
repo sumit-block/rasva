@@ -45,6 +45,7 @@ export const TASK_LABEL: Record<string, string> = {
   "image.generate": "Image",
   "image.edit": "Image edit",
   "model.install": "Install engine",
+  "model.update": "Update engine software",
   "model.remove": "Remove engine",
 };
 

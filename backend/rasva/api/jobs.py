@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from rasva.api.deps import DB, State
 from rasva.api.errors import ApiError
-from rasva.api.models import InstallRequest, install_model, remove_model
+from rasva.api.models import InstallRequest, install_model, remove_model, update_model
 from rasva.engines.contract import EngineError
 from rasva.engines.registry import load_class
 from rasva.jobs import repository as repo
@@ -190,6 +190,8 @@ def retry_job(job_id: str, state: State, conn: DB) -> dict[str, Any]:
     if old["task"] == "model.install":
         accepted = bool(old["inputs"].get("license_accepted"))
         return install_model(old["engine_id"], state, conn, InstallRequest(accept_license=accepted))
+    if old["task"] == "model.update":
+        return update_model(old["engine_id"], state, conn)
     if old["task"] == "model.remove":
         return remove_model(old["engine_id"], state, conn)
     # Retry exactly what was generated before, including its pronunciation choices.

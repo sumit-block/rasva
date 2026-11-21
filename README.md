@@ -268,6 +268,15 @@ phone. macOS may ask once whether to allow incoming connections; choose Allow.
 | Measurements (M2, 2026-11-20) | 768 px: 50–53 s from text, 124 s with 1 photo, 167 s with 2; MLX peak 4.9–7.3 GB; installed 21.9 GB including the 16 GB originals ([details](docs/engines/flux2klein.md)) |
 | Still open | Owner review of quality; tests on photos of real people. The 16 GB originals are kept (for an 8-bit comparison) |
 
+## Qwen-Image 2.1 Turbo (owner's private use, ADR-0010)
+
+| Item | Status |
+| --- | --- |
+| Engine | Installed: 4-bit, mflux/MLX, create and edit (1–4 photos), optional Improve my instruction for edits; pose and outfit changes stay on FLUX.2 Klein |
+| Measurements (M2, 2026-11-21) | 1024 px text-to-image 467 s; 2-photo edit 796 s plus 29 s to improve; MLX peak about 22 GB on a 16 GB Mac, swap 9–11 GB; installed 43.7 GB ([details](docs/engines/qwen21turbo.md)) |
+| Licence | Qwen Research License (research or evaluation only); owner's private, non-commercial use |
+| Still open | Owner's own tests; whether to keep it, try a memory saver, or remove it |
+
 ## I4 status: image versions, export, cleanup (engine-independent parts)
 
 Built and tested with a fake image engine (`tests/fake_versioned_image.py`). No real

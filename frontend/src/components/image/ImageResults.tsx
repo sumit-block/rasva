@@ -139,7 +139,11 @@ function ImageGroupCard({ group, onChange }: { group: ImageGroup; onChange: (g: 
       </div>
 
       <p className="mt-2 text-xs text-muted">
-        Seed {String(selected.inputs.seed)} · {String(selected.inputs.steps)} steps · {timeAgo(selected.created_at)}
+        {[
+          selected.inputs.seed !== undefined && `Seed ${String(selected.inputs.seed)}`,
+          selected.inputs.steps !== undefined && `${String(selected.inputs.steps)} steps`,
+          timeAgo(selected.created_at),
+        ].filter(Boolean).join(" · ")}
         {selected.inputs.low_memory === true && " · low-memory mode"}
         {favourite && " · your favourite"}
         {!favourite && group.current_job_id === selected.id && " · current (newest)"}

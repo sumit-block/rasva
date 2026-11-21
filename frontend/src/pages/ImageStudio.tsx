@@ -1,4 +1,4 @@
-import { ImageIcon, Plus, Sparkles, Wand2 } from "lucide-react";
+import { ImageIcon, Pencil, Plus, Sparkles, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ImageResults } from "@/components/image/ImageResults";
@@ -21,6 +21,72 @@ const TASK: Record<Mode, string> = { create: "image.generate", edit: "image.edit
 const IMAGE_TASKS = new Set(Object.values(TASK));
 const MAX_CHARS = 1000;
 const MAX_SEED = 2 ** 32 - 1;
+
+const defaultProjectName = () => `Images ${new Date().toLocaleDateString()}`;
+
+/**
+ * "New" and "Rename" for image projects: a small name box, with a suggested
+ * name selected so typing replaces it. Enter saves, Esc cancels.
+ */
+function ProjectNameButtons({ current, disabled, onCreate, onRename }: {
+  current: Project | null;
+  disabled: boolean;
+  onCreate: (name: string) => Promise<void>;
+  onRename: (id: string, name: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<"new" | "rename" | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const open = (kind: "new" | "rename") => {
+    setEditing(kind);
+    setError(undefined);
+    setName(kind === "rename" && current ? current.name : defaultProjectName());
+  };
+  const save = async () => {
+    const clean = name.trim();
+    if (!clean) return setError("Give the project a name.");
+    setBusy(true);
+    try {
+      if (editing === "rename" && current) await onRename(current.id, clean);
+      else await onCreate(clean);
+      setEditing(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <>
+        {current && (
+          <Button variant="ghost" disabled={disabled} onClick={() => open("rename")} aria-label={`Rename ${current.name}`}>
+            <Pencil aria-hidden /> Rename
+          </Button>
+        )}
+        <Button variant="secondary" disabled={disabled} onClick={() => open("new")}>
+          <Plus aria-hidden /> New
+        </Button>
+      </>
+    );
+  }
+  return (
+    <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+      <label className="sr-only" htmlFor="project-name">{editing === "new" ? "New project name" : "Project name"}</label>
+      <input id="project-name" autoFocus maxLength={200} value={name} onChange={(e) => setName(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); }}
+        placeholder="Project name"
+        className="min-h-11 w-56 rounded-lg border border-accent bg-bg px-3 text-sm" />
+      <Button type="submit" disabled={busy || !name.trim()}>{editing === "new" ? "Create" : "Save"}</Button>
+      <Button type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+      {error && <span className="w-full text-xs text-danger">{error}</span>}
+    </form>
+  );
+}
 
 function Studio({ engines, projects, reloadProjects, models }: { engines: EngineInfo[]; projects: Project[]; reloadProjects: () => Promise<void>; models: EngineInfo[] }) {
   const { prefs } = usePrefs();
@@ -68,13 +134,13 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
   const needsPhoto = mode === "edit" && !refs.some((r) => r.role === "person");
   const blocked = !engine || !prompt.trim() || tooLong || badSeed || needsPhoto || submitting;
 
-  const createProject = async () => {
-    const p = await api.createProject({ name: `Images ${new Date().toLocaleDateString()}`, module: "image" });
+  const createProject = async (name = defaultProjectName()) => {
+    const p = await api.createProject({ name, module: "image" });
     await reloadProjects();
     return p;
   };
-  const newProject = async () => {
-    const p = await createProject();
+  const newProject = async (name?: string) => {
+    const p = await createProject(name);
     setParams({ project: p.id, ...(mode === "edit" ? { mode } : {}) });
     return p.id;
   };
@@ -141,10 +207,11 @@ function Studio({ engines, projects, reloadProjects, models }: { engines: Engine
               {projects.length === 0 && <option value="">New project</option>}
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <Button variant="secondary" disabled={submitting}
-              onClick={() => void newProject().catch((e: Error) => setError(e.message))}>
-              <Plus aria-hidden /> New
-            </Button>
+<ProjectNameButtons
+              current={projects.find((p) => p.id === projectId) ?? null}
+              disabled={submitting}
+              onCreate={async (name) => void (await newProject(name))}
+              onRename={async (id, name) => { await api.updateProject(id, { name }); await reloadProjects(); }} />
           </div>
         }
       />

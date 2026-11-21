@@ -20,6 +20,7 @@ Guarantees:
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import hashlib
 import importlib
@@ -83,6 +84,54 @@ class Hooks:
 
 def _gb(n: int) -> str:
     return f"{n / 1024**3:.2f} GB" if n >= 1024**3 else f"{n / 1024**2:.0f} MB"
+
+
+SPEED_WINDOW_S = 10.0  # download speed is averaged over this many recent seconds
+SPEED_MIN_SPAN_S = 2.0  # and shown once at least this much has been measured
+
+
+class DownloadSpeed:
+    """Bytes per second over a sliding window, from (time, bytes done) samples.
+
+    Call ``restart`` when a new file begins: its first report may jump (resumed
+    bytes, or a file already verified on disk), which is not network speed.
+    """
+
+    def __init__(self) -> None:
+        self._samples: collections.deque[tuple[float, int]] = collections.deque()
+
+    def restart(self) -> None:
+        self._samples.clear()
+
+    def add(self, now: float, done: int) -> float | None:
+        self._samples.append((now, done))
+        while len(self._samples) > 2 and now - self._samples[1][0] >= SPEED_WINDOW_S:
+            self._samples.popleft()
+        t0, b0 = self._samples[0]
+        span = now - t0
+        if span < SPEED_MIN_SPAN_S:
+            return None
+        return max(done - b0, 0) / span
+
+
+def _duration(seconds: float) -> str:
+    """Plain time left: "about 1 h 32 min", "about 4 min", "under a minute"."""
+    minutes = int(round(seconds / 60))
+    if minutes < 1:
+        return "under a minute"
+    hours, mins = divmod(minutes, 60)
+    return f"about {hours} h {mins} min" if hours else f"about {mins} min"
+
+
+def download_detail(done: int, total: int, speed: float | None) -> str:
+    """Progress text: amount, speed and time left once the speed is known."""
+    text = f"Downloaded {_gb(done)} of {_gb(total)}"
+    if speed is None or done >= total:
+        return text
+    if speed <= 0:
+        return f"{text} · waiting for data"
+    left = _duration((total - done) / speed)
+    return f"{text} · {speed / 1024**2:.1f} MB/s · {left} left"
 
 
 def sha256_file(path: Path) -> str:
@@ -674,15 +723,19 @@ class Installer:
         hooks.transition(JobState.DOWNLOADING, f"Downloading {_gb(total)}")
         done_before = 0
         last = 0.0
+        speed = DownloadSpeed()
 
         def make_report(base: int) -> Callable[[int], None]:
+            speed.restart()  # a new file: its first report may be resumed bytes
+
             def report(n: int) -> None:
                 nonlocal last
                 now = time.monotonic()
                 current = base + n
+                rate = speed.add(now, current)
                 if now - last >= PROGRESS_INTERVAL_S or current >= total:
                     last = now
-                    hooks.progress(current / total, f"Downloaded {_gb(current)} of {_gb(total)}")
+                    hooks.progress(current / total, download_detail(current, total, rate))
 
             return report
 

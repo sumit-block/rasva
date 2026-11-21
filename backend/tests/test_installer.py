@@ -803,3 +803,44 @@ def test_prepare_cannot_use_the_network(isettings, server):
         assert "blocked a network connection while preparing" in log
     finally:
         c.__exit__(None, None, None)
+
+
+# ---- download speed and time left ----
+
+
+def test_download_speed_over_a_window():
+    from rasva.services.installer import DownloadSpeed
+
+    s = DownloadSpeed()
+    assert s.add(0.0, 0) is None  # too short to tell
+    assert s.add(1.0, 5 * 1024**2) is None
+    assert s.add(2.0, 10 * 1024**2) == 5 * 1024**2  # 5 MB/s
+    for t in range(3, 30):
+        rate = s.add(float(t), 10 * 1024**2 + (t - 2) * 1024**2)  # slows to 1 MB/s
+    assert rate == pytest.approx(1024**2, rel=0.01)  # old samples have left the window
+
+
+def test_resumed_bytes_do_not_count_as_speed():
+    from rasva.services.installer import DownloadSpeed
+
+    s = DownloadSpeed()
+    s.add(0.0, 0)
+    s.restart()  # next file, resumed at 1.5 GB
+    s.add(10.0, 1536 * 1024**2)
+    rate = s.add(13.0, 1536 * 1024**2 + 12 * 1024**2)
+    assert rate == pytest.approx(4 * 1024**2)
+
+
+def test_download_detail_text():
+    from rasva.services.installer import download_detail
+
+    gb = 1024**3
+    assert download_detail(gb, 30 * gb, None) == "Downloaded 1.00 GB of 30.00 GB"
+    text = download_detail(10 * gb, 30 * gb, 4 * 1024**2)
+    assert text == "Downloaded 10.00 GB of 30.00 GB · 4.0 MB/s · about 1 h 25 min left"
+    assert download_detail(29 * gb, 30 * gb, 4 * 1024**2).endswith("· about 4 min left")
+    assert download_detail(30 * gb - 1024**2, 30 * gb, 100 * 1024**2).endswith(
+        "under a minute left"
+    )
+    assert download_detail(30 * gb, 30 * gb, 4 * 1024**2) == "Downloaded 30.00 GB of 30.00 GB"
+    assert download_detail(gb, 30 * gb, 0.0).endswith("waiting for data")
